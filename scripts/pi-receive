@@ -10,4 +10,4 @@ if command -v fuser >/dev/null 2>&1; then
 fi
 sleep 0.5
 cd /home/bs/tank
-nohup /home/bs/nano-venv/bin/python check/preview.py >/tmp/preview.log 2>&1 &
+nohup /home/bs/nano-venv/bin/python check/preview.py >/tmp/preview.log 2>&1 </dev/null &
