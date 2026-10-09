@@ -1,6 +1,6 @@
 # Run sheet
 
-Hardware is in [hardware.md](hardware.md). The case is in [business-case.md](business-case.md). The older build notes in [tank-build-plan.md](tank-build-plan.md) are not the procedure.
+Hardware is in [hardware.md](hardware.md). The case is in [business-case.md](business-case.md). The older build notes in [tank-build-plan.md](tank-build-plan.md) are not the procedure. Publish a code change with the steps in [README.md](README.md).
 
 This is a proof on the Ninja, not a small copy of the well. A brew here empties the reservoir. On a pad the pump does not. The page has to show volume, a consumption rate, person visits, refills, a coffee bill, and a refill alarm.
 

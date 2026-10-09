@@ -1,13 +1,44 @@
 #!/bin/sh
-# GIT_DIR is the bare repo during the hook. Drop it or checkout updates the bare repo.
 set -eu
-unset GIT_DIR
-git --git-dir=/home/bs/tank.git --work-tree=/home/bs/tank checkout -f
-cp /home/bs/tank/scripts/pi-receive /home/bs/tank.git/hooks/post-receive
-chmod 755 /home/bs/tank.git/hooks/post-receive
+
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+
+git_dir=/home/bs/tank.git
+work=/home/bs/tank
+
+# The bare repo HEAD can be an unborn branch. The push record is the commit.
+new=
+if [ ! -t 0 ]; then
+  while read -r _old rev _ref; do
+    new=$rev
+  done
+fi
+if [ -z "$new" ]; then
+  new=$(git --git-dir="$git_dir" rev-parse HEAD)
+fi
+git --git-dir="$git_dir" --work-tree="$work" checkout -f "$new"
+
+cp "$work/scripts/pi-receive" "$git_dir/hooks/post-receive"
+chmod 755 "$git_dir/hooks/post-receive"
+
 if command -v fuser >/dev/null 2>&1; then
   fuser -k 8080/tcp >/dev/null 2>&1 || true
 fi
-sleep 0.5
-cd /home/bs/tank
+
+sleep 1
+
+cd "$work"
 nohup /home/bs/nano-venv/bin/python check/preview.py >/tmp/preview.log 2>&1 </dev/null &
+
+# Return only after the new process listens, so the next run kills it.
+if command -v fuser >/dev/null 2>&1; then
+  n=0
+  while [ "$n" -lt 20 ]; do
+    if fuser 8080/tcp >/dev/null 2>&1; then
+      exit 0
+    fi
+    n=$((n + 1))
+    sleep 1
+  done
+  exit 1
+fi
