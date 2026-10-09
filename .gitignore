@@ -1,0 +1,15 @@
+learn/
+photos/
+Photos/
+Photos-1-001.zip
+check/*.jpg
+check/*.jpeg
+check/*.png
+*.pdf
+.env
+__pycache__/
+*.pyc
+train/
+.venv/
+nano-venv/
+.roboflow/
