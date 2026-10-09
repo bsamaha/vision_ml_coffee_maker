@@ -5,6 +5,9 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 git_dir=/home/bs/tank.git
 work=/home/bs/tank
+uv=/home/bs/.local/bin/uv
+system_python=/usr/bin/python3
+envs=/home/bs/tank-envs
 
 # The bare repo HEAD can be an unborn branch. The push record is the commit.
 new=
@@ -21,20 +24,71 @@ git --git-dir="$git_dir" --work-tree="$work" checkout -f "$new"
 cp "$work/scripts/pi-receive" "$git_dir/hooks/post-receive"
 chmod 755 "$git_dir/hooks/post-receive"
 
+cd "$work"
+lock_id=$(sha256sum "$work/uv.lock" | awk 'NR==1 { print $1 }')
+slot=$envs/slots/$lock_id
+venv=$slot/.venv
+ready=$slot/ready
+python=$venv/bin/python
+
+probe() {
+  "$python" -c 'import importlib.metadata as m, sys
+from PIL import Image
+import numpy
+if sys.version_info[:2] != (3, 12):
+    raise SystemExit(1)
+if not m.version("torch").endswith("+cpu"):
+    raise SystemExit(1)
+if not m.version("torchvision").endswith("+cpu"):
+    raise SystemExit(1)
+m.version("rfdetr")
+m.version("numpy")
+m.version("pillow")
+Image.new("RGB", (1, 1))
+numpy.zeros(1)
+'
+}
+
+need_sync=1
+if [ -x "$python" ] && [ -f "$ready" ] && [ "$(cat "$ready")" = "$lock_id" ]; then
+  if probe; then
+    need_sync=0
+  fi
+fi
+
+if [ "$need_sync" -eq 1 ]; then
+  mkdir -p "$slot"
+  if ! UV_PROJECT_ENVIRONMENT="$venv" "$uv" sync --frozen --project "$work" --python "$system_python" --no-managed-python --no-dev; then
+    echo "uv sync failed; preview left running" >&2
+    exit 1
+  fi
+  if ! probe; then
+    rm -f "$ready"
+    echo "probe failed; preview left running" >&2
+    exit 1
+  fi
+fi
+printf '%s\n' "$lock_id" > "$ready"
+
 if command -v fuser >/dev/null 2>&1; then
   fuser -k 8080/tcp >/dev/null 2>&1 || true
 fi
-
 sleep 1
+mkdir -p "$envs"
+ln -sfn "$venv" "$envs/current"
 
 cd "$work"
-nohup /home/bs/nano-venv/bin/python check/preview.py >/tmp/preview.log 2>&1 </dev/null &
+nohup "$python" check/preview.py >/tmp/preview.log 2>&1 </dev/null &
 
-# Return only after the new process listens, so the next run kills it.
 if command -v fuser >/dev/null 2>&1; then
   n=0
   while [ "$n" -lt 20 ]; do
     if fuser 8080/tcp >/dev/null 2>&1; then
+      for dir in "$envs"/slots/*; do
+        if [ "$dir" != "$slot" ]; then
+          rm -rf "$dir"
+        fi
+      done
       exit 0
     fi
     n=$((n + 1))

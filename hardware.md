@@ -78,9 +78,9 @@ Controls, read on 9 October 2026:
 
 ## Preview and Nano
 
-The preview is `check/preview.py`, copied to `/home/bs/preview.py`. It listens on port 8080. On this LAN that is [http://192.168.1.248:8080](http://192.168.1.248:8080). The page shows the upright frame and the latest Nano boxes. A person box is green. Other classes are orange. The picture changes about every 5 seconds, which is how long one CPU pass takes.
+The preview is `check/preview.py`. The hook starts it. It listens on port 8080. On this LAN that is [http://192.168.1.248:8080](http://192.168.1.248:8080). The page shows the upright frame and the latest Nano boxes. A person box is green. Other classes are orange. The picture changes about every 5 seconds, which is how long one CPU pass takes.
 
-The venv is `/home/bs/nano-venv` (Python 3.12). It has CPU `torch` 2.14 and `rfdetr` 1.10.1. Weights are `/home/bs/.roboflow/models/rf-detr-nano.pth` (349 MB). The same `RFDETRNano(device="cpu")` and `predict` call as the desk supervisor. That project refuses to load without CUDA. This one does not.
+The interpreter is the slot uv builds from `uv.lock`, under `/home/bs/tank-envs/slots/`. uv is `/home/bs/.local/bin/uv`. The pins are CPU `torch` 2.14.1 and `rfdetr` 1.10.1. Weights are `/home/bs/.roboflow/models/rf-detr-nano.pth` (349 MB). The same `RFDETRNano(device="cpu")` and `predict` call as the desk supervisor. That project refuses to load without CUDA. This one does not.
 
 On 9 October 2026 a 1280×720 frame took about 4.4 seconds after the weights were on disk. The first load, including the download, was about 3 minutes. A later load was about 15 seconds. With the kitchen empty the model returned bowl, chair, dining table, and bottle. No person was in that shot.
 

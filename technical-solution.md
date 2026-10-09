@@ -10,7 +10,7 @@ The camera stays where it is. It looks at the graduated face from a little above
 
 The camera body is upside down. There is no flip control on the device. Every still and the live page use `hflip,vflip`. The preview owns `/dev/video0`. Open [http://192.168.1.248:8080](http://192.168.1.248:8080). A person box is green. Chair, bowl, dining table, and bottle boxes are orange. The picture updates about every 5 seconds.
 
-Nano is the COCO `RFDETRNano` in `/home/bs/nano-venv`, on CPU. One 1280×720 frame takes about 4.4 seconds. Person is a class on that model. It is not a second model we train. The tank model (`liquid` and `reservoir`) is not trained yet.
+Nano is the COCO `RFDETRNano` from the uv lock, on CPU. One 1280×720 frame takes about 4.4 seconds. Person is a class on that model. It is not a second model we train. The tank model (`liquid` and `reservoir`) is not trained yet.
 
 The water line is the top of that bright band. Percent full is how high the line sits in the reservoir. Volume is that percent times 70 fl oz. A rate of 0 is normal. Under 25% full (17.5 fl oz) is the refill alarm. Accuracy is only figured on readings at or above 25%.
 
