@@ -88,11 +88,9 @@ On 9 October 2026 a 1280×720 frame took about 4.4 seconds after the weights wer
 
 # Coffee makers
 
-The two photos in `photos/` are a Ninja drip brewer (`IMG_1903.HEIC`) and a Nespresso VertuoPlus (`IMG_1904.HEIC`). Both have a clear removable water reservoir. On the Ninja the reservoir is graduated. On the Nespresso it is not.
+The proof uses the Ninja in `photos/IMG_1903.HEIC`. The camera looks at the graduated face, a little above the reservoir, with the whole machine in frame. On 9 October 2026 the tank was filled to about 75% and the water showed as a bright horizontal band. The cup marks above that band were readable. The brew procedure is in [technical-solution.md](technical-solution.md).
 
-The proof uses the Ninja. The camera looks at the graduated face, a little above the reservoir, with the whole machine in frame. On 9 October 2026 the tank was filled to about 75% and the water showed as a bright horizontal band. The cup marks above that band were readable. The Vertuo is unused. The brew procedure is in [technical-solution.md](technical-solution.md).
-
-The model number is on the back of the Ninja, by the power cord, and on the bottom of the Nespresso. Neither label is in these photos, so the notes below are the series each machine belongs to.
+The model number is on the back of the Ninja, by the power cord. That label is not in the photo, so the notes below are the DCM200 series.
 
 ## Ninja Programmable XL 14-Cup
 
@@ -139,59 +137,6 @@ The carafe has to be in place. If it is not, the brewer holds the coffee in the 
 
 Some units in this series have a freshness timer that counts up to 4 hours after a brew. The photographed panel has a power button in that spot, so this unit does not have that timer.
 
-## Nespresso VertuoPlus
-
-`IMG_1904` is a white Nespresso VertuoPlus: rounded head with the Nespresso logo, black lock lever under the head, black coffee outlet, honeycomb drip grid, and a clear cylindrical tank on the side with a black lid. A domed Vertuo capsule is on the counter. This machine takes Vertuo capsules only. Original-line capsules do not fit.
-
-The current Vertuo Plus manual covers Nespresso GCB2 and GDB2, Breville BNV320, BNV350, BNV420, and BNV450, and De'Longhi ENV155. US power is 120 V, 60 Hz, 1300 W. Heat-up is about 40 seconds. It turns off after 9 minutes idle, or immediately if the lever is held down for 3 seconds.
-
-The tank swings to the side or the back. The photo has it on the side.
-
-| Tank | Capacity |
-|---|---|
-| Standard (low end) | 1.2 L / 40 fl oz |
-| Deluxe (high end) | 1.8 L / 60 fl oz |
-
-The side tank in the photo is the standard shape. The bottom label is what separates a 40 oz machine from a 60 oz one. There are no cup marks on this reservoir.
-
-The used-capsule bin holds about 14 espresso capsules or 10 mug capsules. The cup support has several heights.
-
-### How a brew uses water
-
-There is one button, on top of the head, and it is both power and brew. Closing the lever locks the head. Pressing the button once starts a brew.
-
-The machine reads a barcode on the capsule and uses the recipe Nespresso set for that capsule: spin speed, flow, and cup length. The capsule spins (Centrifusion) as water passes through it. Brewing does not start the instant the button is pressed. The machine reads the code, wets the grounds, and infuses before coffee flows. It stops on its own at that capsule's volume.
-
-Factory sizes in the current Vertuo Plus manual:
-
-| Capsule | Volume |
-|---|---|
-| Ristretto | 25 ml / 0.84 fl oz |
-| Espresso | 40 ml / 1.35 fl oz |
-| Double Espresso | 80 ml / 2.7 fl oz |
-| Gran Lungo | 150 ml / 5.07 fl oz |
-| Mug | 230 ml / 7.77 fl oz |
-| Alto, cold-brew style | 355 ml / 12.5 fl oz |
-| Carafe | 535 ml / 18 fl oz |
-
-Breville's US VertuoPlus page advertises four of these and rounds the mug to 8 oz: espresso 1.35 oz, double espresso 2.7 oz, Gran Lungo 5 oz, and coffee 8 oz. The manual is the longer list. The barcode on the inserted capsule is what the machine follows.
-
-**Programmed volume.** Hold the brew button during a cup and release a few seconds before the level you want. That volume is stored for that capsule type only, from 20 ml / 0.68 fl oz up to 535 ml / 18 fl oz. Later capsules of the same type stop at the programmed volume. Resetting to factory settings clears it: lever down for 3 seconds, lever and button together for 3 seconds until the light is orange, lever three times, then the button once. The light blinks orange three times and returns to steady green.
-
-A 40 oz tank holds about twenty 1.35 oz espressos, about five 7.77 oz mugs, or about two 18 oz carafes.
-
-### Other cycles
-
-**Rinse.** Button three times within 2 seconds, with no capsule in the head and a container of at least 1 L under the outlet. The light blinks orange. Water can take up to 2 minutes to start, and the cycle can take up to 5 minutes. Press the button once to stop it early. The same rinse is the first-use flush.
-
-**Descale.** A half-red, half-green button means descale. The manual says the machine only offers this after 30 or more coffees. The procedure is about 20 minutes and is not meant to be interrupted. Fill the tank with 0.5 L / 17 fl oz of water plus one unit of Nespresso descaler, enter the orange menu (lever and button together for 3 seconds), push the lever once, then press the button. When that phase ends, fill the tank with fresh water and press the button for a rinse of up to 5 minutes.
-
-**Empty.** For storage, frost, or repair. With the tank empty: lever down for 3 seconds to turn off, lever twice, button once. It runs about 30 seconds and then turns off.
-
-Steady green means ready. Blinking green means heating, about 40 seconds. Blinking orange means rinse or descale is running.
-
 ## Sources
 
 - Ninja DCM200-series owner's guide (DCM200, DCM200A, DCM201, DCM201BK), 2022: [Home Depot PDF](https://images.thdstatic.com/catalog/pdfImages/f9/f9c1668c-d392-48cd-b020-5cec9a95cef0.pdf)
-- Nespresso Vertuo Plus user manual: [Nespresso PDF](https://www.nespresso.com/ecom/medias/sys_master/public/46444123095070/Nespresso-Vertuo-Plus-User-Manual-Cluster-1.pdf)
-- Breville US VertuoPlus (BNV420), four advertised sizes and 40 oz / 60 oz tanks: [Breville](https://www.breville.com/en-us/product/bnv420)
