@@ -94,7 +94,7 @@ def upload_image(path):
     chunks.append(f"--{boundary}--\r\n".encode())
     body = b"".join(chunks)
     request = urllib.request.Request(
-        f"https://api.roboflow.com/{PROJECT}/upload?api_key={key}",
+        f"https://api.roboflow.com/dataset/{PROJECT}/upload?api_key={key}",
         data=body,
         method="POST",
     )
