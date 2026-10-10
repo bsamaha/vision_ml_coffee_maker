@@ -2,7 +2,6 @@
 """Guided still capture. Open http://<pi>:8080. Does not load a model."""
 
 import json
-import math
 import subprocess
 import threading
 import time
@@ -16,7 +15,6 @@ TRAIN = Path(__file__).resolve().parent.parent / "train"
 
 
 class Step(NamedTuple):
-    seconds: int
     instruction: str
     filename: str
 
@@ -38,10 +36,8 @@ def build_steps():
         if i == 0:
             steps.append(
                 Step(
-                    60,
                     "WARM is 0. The machine is off. The carafe is seated and empty. "
-                    "The reservoir is empty. Stand clear. The page saves this picture "
-                    "when the count reaches zero. 0 fl oz, alarm.",
+                    "The reservoir is empty. Stand clear, then press Save picture. 0 fl oz, alarm.",
                     filename,
                 )
             )
@@ -50,9 +46,8 @@ def build_steps():
         alarm = ", alarm" if oz < Decimal("17.5") else ""
         steps.append(
             Step(
-                45,
-                f"Add 1/2 cup. Stop at {_amount(cups)} {unit}. { _amount(oz)} fl oz, {pct}%{alarm}. "
-                "Stand clear. The page saves this picture when the count reaches zero.",
+                f"Add 1/2 cup. Stop at {_amount(cups)} {unit}. {_amount(oz)} fl oz, {pct}%{alarm}. "
+                "Stand clear, then press Save picture.",
                 filename,
             )
         )
@@ -90,10 +85,7 @@ FFMPEG = [
 latest = b""
 frame_lock = threading.Lock()
 script_lock = threading.Lock()
-start_event = threading.Event()
 index = 0
-deadline = None
-started = False
 
 
 def read_lock():
@@ -144,17 +136,6 @@ def first_missing():
     return len(STEPS)
 
 
-def ensure_started():
-    global started
-    if read_lock() is None:
-        return
-    with script_lock:
-        if started:
-            return
-        started = True
-    start_event.set()
-
-
 def capture():
     global latest
     applied = object()
@@ -193,69 +174,41 @@ def capture():
         time.sleep(0.2)
 
 
-def clock():
-    global index, deadline
-    start_event.wait()
-    while True:
-        with script_lock:
-            i = index
+def save_current():
+    if read_lock() is None:
+        return
+    with frame_lock:
+        jpg = bytes(latest)
+    if not jpg:
+        return
+    with script_lock:
+        i = index
         if i >= len(STEPS):
-            with script_lock:
-                deadline = None
             return
-        step = STEPS[i]
-        path = TRAIN / step.filename
-        if path.is_file():
-            with script_lock:
-                if index == i:
-                    index = i + 1
-                    deadline = None
-            continue
-        end = time.monotonic() + step.seconds
-        with script_lock:
-            deadline = end
-        while time.monotonic() < end:
-            time.sleep(0.05)
-        jpg = b""
-        while not jpg:
-            with frame_lock:
-                jpg = bytes(latest)
-            if not jpg:
-                time.sleep(0.2)
-        TRAIN.mkdir(parents=True, exist_ok=True)
+        path = TRAIN / STEPS[i].filename
         if not path.is_file():
+            TRAIN.mkdir(parents=True, exist_ok=True)
             path.write_bytes(jpg)
-        with script_lock:
-            if index == i:
-                index = i + 1
-                deadline = None
+        index = i + 1
 
 
 def status():
     locked = read_lock() is not None
-    if locked:
-        ensure_started()
     with script_lock:
         i = index
-        when = deadline
     done = i >= len(STEPS)
     if not locked:
         instruction = (
-            "The camera is not locked. There is no capture button. "
-            "After the lock file is in place, this page counts down and saves each picture by itself."
+            "The camera is not locked. Pressing Save picture writes nothing until the lock file is in place."
         )
-        left = None
     elif done:
         instruction = "The shoot is done."
-        left = None
     else:
         instruction = STEPS[i].instruction
-        left = None if when is None else max(0, math.ceil(when - time.monotonic()))
     files = sum(1 for step in STEPS if (TRAIN / step.filename).is_file())
     return {
         "locked": locked,
         "instruction": instruction,
-        "secondsLeft": left,
         "files": files,
         "done": done,
         "total": len(STEPS),
@@ -270,24 +223,29 @@ html,body{margin:0;height:100%}
 body{background:#111;color:#fff;font:22px sans-serif;display:flex;flex-direction:column;height:100vh}
 #bar{padding:12px 16px;flex:0 0 auto}
 #bar p{margin:0 0 8px}
-#sec{font-size:56px;line-height:1}
+button{font:22px sans-serif;padding:14px 18px}
 img{width:100vw;flex:1 1 auto;min-height:0;object-fit:contain;background:#000;display:block}
 </style>
 <div id=bar>
 <p id=line></p>
-<p id=sec></p>
 <p id=count></p>
+<button id=save type=button>Save picture</button>
 </div>
 <img src="/stream.mjpg" alt="camera">
 <script>
-async function poll(){
-  try {
-    const body = await fetch("/status.json", {cache:"no-store"}).then(r => r.json());
-    document.getElementById("line").textContent = body.instruction;
-    document.getElementById("sec").textContent = body.secondsLeft == null ? "" : body.secondsLeft;
-    document.getElementById("count").textContent = body.files + " of " + body.total + " pictures";
-  } catch (e) {}
+function show(body){
+  document.getElementById("line").textContent = body.instruction;
+  document.getElementById("count").textContent = body.files + " of " + body.total + " pictures";
+  document.getElementById("save").disabled = !body.locked || body.done;
 }
+async function poll(){
+  try { show(await fetch("/status.json", {cache:"no-store"}).then(r => r.json())); }
+  catch (e) {}
+}
+document.getElementById("save").onclick = async () => {
+  try { show(await fetch("/save", {method:"POST", cache:"no-store"}).then(r => r.json())); }
+  catch (e) {}
+};
 setInterval(poll, 250);
 poll();
 </script>
@@ -338,7 +296,6 @@ class Handler(BaseHTTPRequestHandler):
                 return
             return
         if path in ("/", "/index.html"):
-            ensure_started()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
@@ -348,6 +305,20 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_error(404)
 
+    def do_POST(self):
+        path = self.path.split("?", 1)[0]
+        if path != "/save":
+            self.send_error(404)
+            return
+        save_current()
+        body = json.dumps(status()).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def log_message(self, fmt, *args):
         return
 
@@ -355,6 +326,5 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     index = first_missing()
     threading.Thread(target=capture, daemon=True).start()
-    threading.Thread(target=clock, daemon=True).start()
     print("capture on :8080", flush=True)
     ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
