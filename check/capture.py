@@ -14,6 +14,7 @@ from typing import NamedTuple
 
 CONF = Path("/home/bs/tank-envs/camera.conf")
 TRAIN = Path(__file__).resolve().parent.parent / "train"
+SHOOT = ""
 
 
 class Step(NamedTuple):
@@ -638,12 +639,15 @@ def status():
         count = f"Step 2. Check the picture. Focus {pair[0]}, exposure {pair[1]}."
     elif done:
         phase = "done"
-        instruction = "The shoot is done. The pictures are in train/."
+        folder = TRAIN.relative_to(Path(__file__).resolve().parent.parent).as_posix()
+        instruction = f"The shoot is done. The pictures are in {folder}/."
         count = f"{len(STEPS)} of {len(STEPS)} pictures."
     else:
         phase = "pour"
         instruction = step.instruction
         count = step_header(step, i + 1)
+    if SHOOT:
+        count = f"{SHOOT} · {count}"
     files = sum(1 for item in STEPS if is_jpeg(TRAIN / item.filename))
     current = None if step is None else TRAIN / step.filename
     return {
@@ -915,8 +919,13 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
-if __name__ == "__main__":
+def main():
+    global index
     index = first_missing()
     threading.Thread(target=capture, daemon=True).start()
-    print("capture on :8080", flush=True)
+    print(f"capture on :8080 writing {TRAIN}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()
