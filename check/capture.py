@@ -6,30 +6,13 @@ import math
 import subprocess
 import threading
 import time
+from decimal import Decimal, ROUND_HALF_UP
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import NamedTuple
 
 CONF = Path("/home/bs/tank-envs/camera.conf")
 TRAIN = Path(__file__).resolve().parent.parent / "train"
-# 5 fl oz per cup, 70 fl oz full, tenths, half up. The filename is this text, not a fresh division.
-PCTS = (
-    "0.0",
-    "7.1",
-    "14.3",
-    "21.4",
-    "28.6",
-    "35.7",
-    "42.9",
-    "50.0",
-    "57.1",
-    "64.3",
-    "71.4",
-    "78.6",
-    "85.7",
-    "92.9",
-    "100.0",
-)
 
 
 class Step(NamedTuple):
@@ -38,27 +21,38 @@ class Step(NamedTuple):
     filename: str
 
 
+def _amount(number):
+    if number == number.to_integral():
+        return str(int(number))
+    return f"{number:.1f}"
+
+
 def build_steps():
     steps = []
-    for cups, pct in enumerate(PCTS):
-        oz = cups * 5
-        filename = f"{cups}cup_{oz:.1f}oz_{pct}pct.jpg"
-        if cups == 0:
+    # Empty, then every half cup through 14. Both ends are pictures, so this is 29.
+    for i in range(29):
+        cups = Decimal(i) / Decimal(2)
+        oz = cups * Decimal(5)
+        pct = (oz / Decimal(70) * Decimal(100)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        filename = f"{_amount(cups)}cup_{oz:.1f}oz_{pct}pct.jpg"
+        if i == 0:
             steps.append(
                 Step(
                     60,
                     "WARM is 0. The machine is off. The carafe is seated and empty. "
-                    "The reservoir is empty. Stand clear. 0 fl oz, alarm.",
+                    "The reservoir is empty. Stand clear. The page saves this picture "
+                    "when the count reaches zero. 0 fl oz, alarm.",
                     filename,
                 )
             )
             continue
         unit = "cup" if cups == 1 else "cups"
-        alarm = ", alarm" if cups <= 3 else ""
+        alarm = ", alarm" if oz < Decimal("17.5") else ""
         steps.append(
             Step(
                 45,
-                f"Add 1 cup. Stop at {cups} {unit}. {oz} fl oz, {pct}%{alarm}.",
+                f"Add 1/2 cup. Stop at {_amount(cups)} {unit}. { _amount(oz)} fl oz, {pct}%{alarm}. "
+                "Stand clear. The page saves this picture when the count reaches zero.",
                 filename,
             )
         )
@@ -246,7 +240,10 @@ def status():
         when = deadline
     done = i >= len(STEPS)
     if not locked:
-        instruction = "The camera is not locked."
+        instruction = (
+            "The camera is not locked. There is no capture button. "
+            "After the lock file is in place, this page counts down and saves each picture by itself."
+        )
         left = None
     elif done:
         instruction = "The shoot is done."
@@ -269,11 +266,12 @@ PAGE = """<!doctype html>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>capture</title>
 <style>
-body{margin:0;background:#111;color:#fff;font:22px sans-serif}
-#bar{padding:12px 16px}
+html,body{margin:0;height:100%}
+body{background:#111;color:#fff;font:22px sans-serif;display:flex;flex-direction:column;height:100vh}
+#bar{padding:12px 16px;flex:0 0 auto}
 #bar p{margin:0 0 8px}
 #sec{font-size:56px;line-height:1}
-img{width:100vw;height:calc(100vh - 132px);object-fit:contain;background:#000;display:block}
+img{width:100vw;flex:1 1 auto;min-height:0;object-fit:contain;background:#000;display:block}
 </style>
 <div id=bar>
 <p id=line></p>
@@ -287,7 +285,7 @@ async function poll(){
     const body = await fetch("/status.json", {cache:"no-store"}).then(r => r.json());
     document.getElementById("line").textContent = body.instruction;
     document.getElementById("sec").textContent = body.secondsLeft == null ? "" : body.secondsLeft;
-    document.getElementById("count").textContent = body.files + " of " + body.total;
+    document.getElementById("count").textContent = body.files + " of " + body.total + " pictures";
   } catch (e) {}
 }
 setInterval(poll, 250);

@@ -58,7 +58,7 @@ Open http://raspberrypi.local:8080. That page is `check/capture.py`. It shows th
 
 If `camera.conf` is missing, the picture still moves and the page says the camera is not locked. The countdown starts the first time you open the page after that file exists. It does not pause between cups. Open it when the reservoir is empty and you can stay for the whole ladder.
 
-The first line waits 60 seconds, then writes `train/0cup_0.0oz_0.0pct.jpg`. Each later line waits 45 seconds and tells you to add 1 cup from a measuring cup, from 1 cup through 14. Stand where the camera cannot see you before the count reaches zero. Cups 0, 1, 2, and 3 are under 25% full, so those lines say alarm. The shoot ends at 14 cups. That is 15 files, one per cup.
+There is no capture button. The first line waits 60 seconds, then writes `train/0cup_0.0oz_0.0pct.jpg`. Each later line waits 45 seconds and tells you to add 1/2 cup. The stops run from 1/2 cup through 14 cups. Stand where the camera cannot see you before the count reaches zero. The page saves the picture at zero and shows the next stop. Fills under 17.5 fl oz, which is under 25%, say alarm. The last stop is 14 cups. Empty plus every half cup through 14 is 29 pictures.
 
 A reload stays on the current cup. If the process restarts, it continues at the first missing file. `train/` is what you label. These files are already flipped. The accuracy number uses fresh fills after training, not these files.
 
