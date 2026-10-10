@@ -19,7 +19,7 @@ import capture
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "train" / "2026-10-10-clear-water-rapid"
-PROJECT = "blake-samaha-s-workspace/rate-and-volume-of-coffee"
+PROJECT = "rate-and-volume-of-coffee"
 KEY_FILE = Path("/home/bs/tank-envs/roboflow.env")
 
 saved = 0
