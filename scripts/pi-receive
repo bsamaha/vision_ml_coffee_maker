@@ -78,7 +78,7 @@ mkdir -p "$envs"
 ln -sfn "$venv" "$envs/current"
 
 cd "$work"
-nohup "$python" check/capture.py >/tmp/preview.log 2>&1 </dev/null &
+nohup "$python" check/capture_rapid.py >/tmp/preview.log 2>&1 </dev/null &
 
 if command -v fuser >/dev/null 2>&1; then
   n=0

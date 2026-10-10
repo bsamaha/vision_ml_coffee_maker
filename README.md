@@ -22,7 +22,7 @@ The Pi installs that lock into a slot under `/home/bs/tank-envs/slots/`. An unch
 
 ## What the Pi updates
 
-`scripts/pi-receive` is the hook. A push checks that commit out into `/home/bs/tank`, installs the lock when the lock changed, and starts `check/capture.py` with that slot's Python. That page writes the afternoon training set. `check/capture_test.py` is the test-split page. `check/preview.py` is the boxed person page. The hook does not start preview during this shoot.
+`scripts/pi-receive` is the hook. A push checks that commit out into `/home/bs/tank`, installs the lock when the lock changed, and starts `check/capture_rapid.py` with that slot's Python. That page writes extra training stills with one button. `check/capture.py` is the afternoon 18-stop page. `check/capture_test.py` is the test-split page. `check/preview.py` is the boxed person page. The hook does not start preview during this shoot.
 
 uv on the Pi is `/home/bs/.local/bin/uv`. Git does not track the slot or the weights. The weights are `/home/bs/.roboflow/models/`.
 
