@@ -164,9 +164,9 @@ button{font:28px sans-serif;padding:18px 22px;margin:0 8px 8px 0;touch-action:ma
 </style>
 <div id=bar>
 <p id=count>0 saved</p>
-<p id=line>Each press takes one picture and uploads it.</p>
+<p id=line>One press saves one picture and uploads it.</p>
 <p id=note></p>
-<button id=save type=button>Take picture</button>
+<button id=save type=button>Capture Image</button>
 <button id=darker type=button>Darker</button>
 <button id=brighter type=button>Brighter</button>
 </div>
@@ -176,37 +176,37 @@ button{font:28px sans-serif;padding:18px 22px;margin:0 8px 8px 0;touch-action:ma
 </div>
 <script>
 const view = document.getElementById("view");
+const preload = new Image();
 let imgBad = false;
 let busy = false;
-function frame(){ view.src = "/frame.jpg?t=" + Date.now(); }
-view.onload = () => { imgBad = false; setTimeout(frame, 200); };
-view.onerror = () => { imgBad = true; document.getElementById("stale").hidden = false; setTimeout(frame, 800); };
+function frame(){ preload.src = "/frame.jpg?t=" + Date.now(); }
+preload.onload = () => { imgBad = false; view.src = preload.src; setTimeout(frame, 1000); };
+preload.onerror = () => { imgBad = true; document.getElementById("stale").hidden = false; setTimeout(frame, 1000); };
 frame();
 function show(body){
-  document.getElementById("count").textContent = body.saved + " saved";
-  document.getElementById("note").textContent = body.note || "";
+  const count = body.saved + " saved";
+  const note = body.note || "";
+  const countEl = document.getElementById("count");
+  const noteEl = document.getElementById("note");
+  if (countEl.textContent !== count) countEl.textContent = count;
+  if (noteEl.textContent !== note) noteEl.textContent = note;
   const stale = imgBad || body.frameAge == null || body.frameAge > 2;
   document.getElementById("stale").hidden = !stale;
-  if (!busy) document.getElementById("save").disabled = false;
 }
 async function poll(){
   try { show(await fetch("/status.json", {cache:"no-store"}).then(r => r.json())); }
   catch (e) {}
 }
-async function press(id, path){
+async function press(path){
   if (busy) return;
   busy = true;
-  document.getElementById("save").disabled = true;
-  if (id === "save") document.getElementById("save").textContent = "Saving…";
   try { show(await fetch(path, {method:"POST", cache:"no-store"}).then(r => r.json())); }
   catch (e) { document.getElementById("note").textContent = "That press did not finish."; }
   busy = false;
-  document.getElementById("save").textContent = "Take picture";
-  document.getElementById("save").disabled = false;
 }
-document.getElementById("save").onclick = () => press("save", "/save");
-document.getElementById("darker").onclick = () => press("darker", "/darker");
-document.getElementById("brighter").onclick = () => press("brighter", "/brighter");
+document.getElementById("save").onclick = () => press("/save");
+document.getElementById("darker").onclick = () => press("/darker");
+document.getElementById("brighter").onclick = () => press("/brighter");
 if (navigator.wakeLock) {
   const ask = () => navigator.wakeLock.request("screen").catch(() => {});
   ask();
