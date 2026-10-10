@@ -53,9 +53,14 @@ accepted=1
 
 Open http://raspberrypi.local:8080. That page is `check/capture.py`. It shows the clean camera and does not draw boxes.
 
-After the lock is kept, the page names one stop at a time. Stand where the camera cannot see you, then press Save this picture. That press writes one file and names the next stop. A second tap while the first press is still working does not write another file. The first file is `train/0cup_0.0oz_0.0pct.jpg`. Each later stop adds 1/2 cup, from 1/2 cup through 14 cups. Fills under 17.5 fl oz, which is under 25%, say alarm. Empty plus every half cup through 14 is 29 pictures. Retake the last picture deletes that file and shows the same stop again. A reload does not take another picture.
+After the lock is kept, the page names one stop at a time. Stand where the camera cannot see you, then press Save this picture. That press writes one file and names the next stop. A second tap while the first press is still working does not write another file. A Ninja cup is 5 fl oz. 14 MAX is 70 fl oz. Fills under 17.5 fl oz, which is under 25%, say alarm.
 
-A reload stays on the current cup. If the process restarts, it continues at the first missing file. `train/` is what you label. These files are already flipped. The accuracy number uses fresh fills after training, not these files.
+The shoot is 24 pictures, in this order:
+
+1. **Hero climb** (camera locked, looking down a little, graduated face). Empty, then 1 cup, then the even cup lines to 14 MAX. At empty, 8 cups, and 14 MAX, yaw the brewer about 25 degrees, save, and put the face back square. 12 pictures. First file is `train/hero_0cup_0.0oz_0.0pct.jpg`.
+2. **Back descend** (camera still locked). Turn the whole brewer so the back of the tank is square. Save 14 MAX, then remove water on the even cup lines down through 1 cup to empty. At 14, 8, and empty, yaw about 25 degrees, save, and put the back square again. 12 pictures.
+
+Retake the last picture deletes that file and shows the same stop again. Save does not skip a filename that is already in train/. Replace clears that current file. A reload does not take another picture. If the process restarts, it continues at the first missing file. `train/` is what you label. Leave `train/2026-10-09-first-try/` out of the upload. These files are already flipped. The accuracy number uses fresh fills after training, not these files.
 
 Do not save `/frame.jpg` from `check/preview.py`. After the first Nano pass that URL can include boxes. Person notes later point the hook back at `check/preview.py`.
 
@@ -66,7 +71,7 @@ New Roboflow project, Object Detection. Upload `train/` only.
 - `liquid` — from the bottom of the reservoir up to the bright band. The top edge sits on that band.
 - `reservoir` — the tank outline.
 
-No person class. The first version uses no augmentations, so the result is these pictures. A later version can add brightness, exposure, blur, and a little noise. Flip, rotation, crop, and shear stay off. The frames are already upright. Draw the boxes tight. The top of the liquid box is the level. The empty frame gets a reservoir box and no liquid box.
+No person class. The first version uses no augmentations, so the result is these pictures. A later version can add brightness, exposure, blur, and a little noise. Flip, rotation, crop, and shear stay off. The frames are already upright. Draw the boxes tight. The top of the liquid box is the level. The empty frame gets a reservoir box and no liquid box. The `reservoir` top is the 14 MAX waterline, not the lip of the tank.
 
 Train RF-DETR Nano for the tank. Keep the COCO Nano for person.
 

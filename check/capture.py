@@ -17,8 +17,19 @@ TRAIN = Path(__file__).resolve().parent.parent / "train"
 
 
 class Step(NamedTuple):
+    pose: str
+    cups: int
+    action: str
+    delta: int
+    restore: str
     instruction: str
     filename: str
+
+
+OZ_PER_CUP = Decimal(5)
+FULL_OZ = Decimal(70)
+ALARM_OZ = Decimal("17.5")
+MIN_JPEG = 1024
 
 
 def _amount(number):
@@ -27,32 +38,128 @@ def _amount(number):
     return f"{number:.1f}"
 
 
+def _fill(cups):
+    cups = Decimal(cups)
+    oz = cups * OZ_PER_CUP
+    pct = (oz / FULL_OZ * Decimal(100)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    return cups, oz, pct
+
+
+def _filename(pose, cups):
+    cups, oz, pct = _fill(cups)
+    return f"{pose}_{_amount(cups)}cup_{oz:.1f}oz_{pct}pct.jpg"
+
+
+def _fill_words(cups):
+    cups, oz, pct = _fill(cups)
+    unit = "cup" if cups == 1 else "cups"
+    alarm = ", alarm" if oz < ALARM_OZ else ""
+    return f"{_amount(cups)} {unit}, {_amount(oz)} fl oz, {pct}%{alarm}"
+
+
+def _cups_unit(count):
+    return "cup" if count == 1 else "cups"
+
+
+def _instruction(pose, cups, action, delta, restore):
+    fill = _fill_words(cups)
+    settle = "Let the surface settle, then stand clear. Press Save this picture."
+    no_pour = "Do not pour. Stand clear, then press Save this picture."
+    if action == "SET":
+        body = (
+            "WARM is 0. The machine is off. The carafe is seated and empty. "
+            "The reservoir is empty. Graduated face square to the camera. "
+            "Camera looks down a little. "
+        )
+        tail = settle
+    elif action == "YAW":
+        body = (
+            "Yaw the brewer about 25 degrees. Keep the whole tank in frame. "
+            "Do not move the camera. Water stays. "
+        )
+        tail = no_pour
+    elif action == "ADD":
+        baking = ", not a baking cup" if cups == 1 else ""
+        body = (
+            f"Add {delta} {_cups_unit(delta)} ({delta * 5} fl oz{baking}). "
+            f"Stop at {_amount(Decimal(cups))} {_cups_unit(cups)}. Graduated face square. "
+        )
+        tail = settle
+    elif action == "TURN":
+        body = (
+            "Turn the whole brewer so the back of the tank is square to the camera. "
+            "Leave the camera. Water stays at 14 MAX. "
+        )
+        tail = no_pour
+    elif action == "REMOVE":
+        empty = "The reservoir is empty. " if cups == 0 else ""
+        face = "Back of the tank square. "
+        body = (
+            f"Remove {delta} {_cups_unit(delta)} ({delta * 5} fl oz). "
+            f"Stop at {_amount(Decimal(cups))} {_cups_unit(cups)}. {face}{empty}"
+        )
+        tail = settle
+    else:
+        raise ValueError(action)
+    if restore == "face":
+        tail += " Then put the graduated face back square."
+    elif restore == "back":
+        tail += " Then put the back of the tank square again."
+    return f"{body}{tail} {fill}."
+
+
+def step_header(step, number):
+    label = "Hero" if step.pose.startswith("hero") else "Back"
+    cups = _amount(Decimal(step.cups))
+    if step.action == "SET":
+        detail = "empty"
+    elif step.action in ("YAW", "TURN"):
+        detail = f"stay at {cups} cups"
+    elif step.action == "ADD":
+        detail = f"add {step.delta} {_cups_unit(step.delta)}"
+    else:
+        detail = f"stop at {cups} {_cups_unit(step.cups)}"
+    return f"{label} {number} of {len(STEPS)} · {step.action} · {detail}"
+
+
 def build_steps():
+    # Hero climb, then back descend. 24 pictures. Camera stays put.
+    # A Ninja cup is 5 fl oz. 14 MAX is 70 fl oz. Offsets are about 25 degrees.
     steps = []
-    # Empty, then every half cup through 14. Both ends are pictures, so this is 29.
-    for i in range(29):
-        cups = Decimal(i) / Decimal(2)
-        oz = cups * Decimal(5)
-        pct = (oz / Decimal(70) * Decimal(100)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-        filename = f"{_amount(cups)}cup_{oz:.1f}oz_{pct}pct.jpg"
-        if i == 0:
-            steps.append(
-                Step(
-                    "WARM is 0. The machine is off. The carafe is seated and empty. "
-                    "The reservoir is empty. Stand clear, then press Save picture. 0 fl oz, alarm.",
-                    filename,
-                )
-            )
-            continue
-        unit = "cup" if cups == 1 else "cups"
-        alarm = ", alarm" if oz < Decimal("17.5") else ""
+
+    def add(pose, cups, action, delta=0, restore=""):
         steps.append(
             Step(
-                f"Add 1/2 cup. Stop at {_amount(cups)} {unit}. {_amount(oz)} fl oz, {pct}%{alarm}. "
-                "Stand clear, then press Save picture.",
-                filename,
+                pose,
+                int(cups),
+                action,
+                int(delta),
+                restore,
+                _instruction(pose, cups, action, delta, restore),
+                _filename(pose, cups),
             )
         )
+
+    add("hero", 0, "SET")
+    add("hero-off", 0, "YAW", restore="face")
+    add("hero", 1, "ADD", 1)
+    add("hero", 2, "ADD", 1)
+    for cups in (4, 6, 8):
+        add("hero", cups, "ADD", 2)
+    add("hero-off", 8, "YAW", restore="face")
+    for cups in (10, 12, 14):
+        add("hero", cups, "ADD", 2)
+    add("hero-off", 14, "YAW")
+    add("back", 14, "TURN")
+    add("back-off", 14, "YAW", restore="back")
+    for cups in (12, 10, 8):
+        add("back", cups, "REMOVE", 2)
+    add("back-off", 8, "YAW", restore="back")
+    for cups in (6, 4, 2):
+        add("back", cups, "REMOVE", 2)
+    add("back", 1, "REMOVE", 1)
+    add("back", 0, "REMOVE", 1)
+    add("back-off", 0, "YAW")
     return tuple(steps)
 
 
@@ -86,12 +193,14 @@ FFMPEG = [
 
 latest = b""
 frame_seq = 0
+frame_at = 0.0
 frame_lock = threading.Lock()
 script_lock = threading.Lock()
 locking = threading.Event()
 busy = threading.Lock()
 index = 0
 note = ""
+lock_warning = ""
 
 
 def conf_vals():
@@ -313,27 +422,58 @@ def apply_controls(focus, exposure):
         set_ctrl(name, value)
 
 
+def readback_warning(focus, exposure):
+    got_focus = read_ctrl("focus_absolute")
+    got_exposure = read_ctrl("exposure_time_absolute")
+    if got_focus is None or got_exposure is None:
+        return "Lock readback failed. The saved lock is still the one on screen."
+    if got_focus != focus or got_exposure != exposure:
+        return (
+            f"Lock readback is focus {got_focus}, exposure {got_exposure}. "
+            f"Saved lock is focus {focus}, exposure {exposure}."
+        )
+    return ""
+
+
+def sync_lock(pair):
+    global lock_warning
+    if locking.is_set():
+        return
+    if pair is None:
+        release_controls()
+        warning = ""
+    else:
+        apply_controls(*pair)
+        warning = readback_warning(*pair)
+    with script_lock:
+        lock_warning = warning
+
+
+def is_jpeg(path):
+    try:
+        with path.open("rb") as handle:
+            if handle.read(2) != b"\xff\xd8":
+                return False
+            handle.seek(0, 2)
+            return handle.tell() >= MIN_JPEG
+    except OSError:
+        return False
+
+
 def first_missing():
     for i, step in enumerate(STEPS):
-        if not (TRAIN / step.filename).is_file():
+        if not is_jpeg(TRAIN / step.filename):
             return i
     return len(STEPS)
 
 
 def capture():
-    global latest, frame_seq
-    applied = object()
+    global latest, frame_seq, frame_at
     while True:
-        lock = read_lock()
         token = conf_text()
         proc = subprocess.Popen(FFMPEG, stdout=subprocess.PIPE)
         if not locking.is_set():
-            if lock is None:
-                release_controls()
-                applied = object()
-            elif token != applied:
-                apply_controls(*lock)
-                applied = token
+            sync_lock(read_lock())
         buf = b""
         try:
             while True:
@@ -341,13 +481,7 @@ def capture():
                     new = conf_text()
                     if new != token:
                         token = new
-                        lock = read_lock()
-                        if lock is None:
-                            release_controls()
-                            applied = object()
-                        else:
-                            apply_controls(*lock)
-                            applied = token
+                        sync_lock(read_lock())
                 chunk = proc.stdout.read(8192)
                 if not chunk:
                     break
@@ -366,6 +500,7 @@ def capture():
                     with frame_lock:
                         latest = jpg
                         frame_seq += 1
+                        frame_at = time.monotonic()
         finally:
             proc.kill()
             proc.wait()
@@ -392,13 +527,35 @@ def save_current():
                 message = "The shoot is already done."
             else:
                 path = TRAIN / STEPS[i].filename
-                if not path.is_file():
+                if is_jpeg(path):
+                    message = f"{path.name} is already in train/. Press Replace to clear it."
+                else:
                     TRAIN.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(jpg)
                     message = f"Saved {path.name}"
-                else:
-                    message = f"{path.name} was already there."
-                index = i + 1
+                    index = i + 1
+        set_note(message)
+    finally:
+        busy.release()
+
+
+def replace_current():
+    if not begin():
+        return
+    try:
+        if not lock_accepted():
+            set_note("Keep the lock before replacing a picture.")
+            return
+        message = ""
+        with script_lock:
+            i = index
+            if i >= len(STEPS):
+                message = "The shoot is already done."
+            else:
+                path = TRAIN / STEPS[i].filename
+                if path.is_file():
+                    path.unlink()
+                message = f"Cleared {path.name}. Save this picture again."
         set_note(message)
     finally:
         busy.release()
@@ -427,13 +584,24 @@ def retake_last():
         busy.release()
 
 
+def frame_age():
+    with frame_lock:
+        seq = frame_seq
+        at = frame_at
+    if seq == 0 or at == 0:
+        return None
+    return round(time.monotonic() - at, 2)
+
+
 def status():
     pair = read_lock()
     accepted = lock_accepted()
     with script_lock:
         i = index
         shown = note
+        warning = lock_warning
     done = i >= len(STEPS)
+    step = None if done else STEPS[i]
     if pair is None:
         phase = "lock"
         instruction = (
@@ -455,9 +623,10 @@ def status():
         count = f"{len(STEPS)} of {len(STEPS)} pictures."
     else:
         phase = "pour"
-        instruction = STEPS[i].instruction
-        count = f"Picture {i + 1} of {len(STEPS)}."
-    files = sum(1 for step in STEPS if (TRAIN / step.filename).is_file())
+        instruction = step.instruction
+        count = step_header(step, i + 1)
+    files = sum(1 for item in STEPS if is_jpeg(TRAIN / item.filename))
+    current = None if step is None else TRAIN / step.filename
     return {
         "phase": phase,
         "locked": pair is not None,
@@ -467,77 +636,161 @@ def status():
         "exposure": None if pair is None else pair[1],
         "files": files,
         "done": done,
-        "canRetake": phase == "pour" and i > 0,
+        "index": i,
+        "action": None if step is None else step.action,
+        "pose": None if step is None else step.pose,
+        "cups": None if step is None else step.cups,
+        "filename": None if step is None else step.filename,
+        "canRetake": i > 0 and phase in ("pour", "done"),
+        "canReplace": phase == "pour" and current is not None and is_jpeg(current),
         "count": count,
         "total": len(STEPS),
         "note": shown,
+        "lockWarning": warning,
+        "frameAge": frame_age(),
     }
 
 
 PAGE = """<!doctype html>
-<meta name=viewport content="width=device-width,initial-scale=1">
+<meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>capture</title>
 <style>
 html,body{margin:0;height:100%}
-body{background:#111;color:#fff;font:22px sans-serif;display:flex;flex-direction:column;height:100vh}
-#bar{padding:12px 16px;flex:0 0 auto}
+body{background:#111;color:#fff;font:22px sans-serif;display:flex;flex-direction:column;height:100vh;height:100dvh}
+#bar{padding:12px 16px;flex:0 0 auto;max-height:42vh;overflow:auto}
 #bar p{margin:0 0 8px}
-button{font:22px sans-serif;padding:14px 18px}
-img{width:100vw;flex:1 1 auto;min-height:0;object-fit:contain;background:#000;display:block}
+#count{font:700 40px sans-serif;line-height:1.15}
+#lockline,#warn{font:18px sans-serif;color:#ddd}
+#warn{color:#fc6}
+button{font:22px sans-serif;padding:14px 18px;margin:0 8px 8px 0;touch-action:manipulation}
+#retake,#replace{font:16px sans-serif;padding:8px 12px}
+#stage{position:relative;flex:1 1 auto;min-height:50vh;background:#000}
+#view{width:100%;height:100%;object-fit:contain;background:#000;display:block}
+#caption{position:absolute;left:0;right:0;bottom:0;margin:0;padding:10px 12px;background:rgba(0,0,0,.72);font:700 28px sans-serif}
+#stale{position:absolute;left:12px;top:12px;margin:0;background:#a30;color:#fff;font:700 28px sans-serif;padding:8px 12px}
 </style>
 <div id=bar>
 <p id=count></p>
+<p id=lockline></p>
+<p id=warn></p>
 <p id=line></p>
 <p id=note></p>
 <button id=lock type=button>Lock this picture</button>
 <button id=keep type=button>Keep this lock</button>
 <button id=retry type=button>Try again</button>
 <button id=save type=button>Save this picture</button>
-<button id=retake type=button>Retake the last picture</button>
+<button id=replace type=button>Replace this picture</button>
+<button id=retake type=button>Retake last</button>
 </div>
+<div id=stage>
 <img id=view alt="camera">
+<p id=caption></p>
+<p id=stale hidden>no frame</p>
+</div>
 <script>
 const view = document.getElementById("view");
-function frame(){ view.src = "/frame.jpg?t=" + Date.now(); }
-view.onload = () => setTimeout(frame, 200);
-view.onerror = () => setTimeout(frame, 800);
-frame();
+const buttons = ["lock","keep","retry","save","replace","retake"].map(id => document.getElementById(id));
+const labels = {
+  lock: "Lock this picture",
+  keep: "Keep this lock",
+  retry: "Try again",
+  save: "Save this picture",
+  replace: "Replace this picture",
+  retake: "Retake last"
+};
+const working = {lock: "Locking…", save: "Saving…", replace: "Replacing…", retake: "Removing…"};
 let busy = false;
+let epoch = 0;
+let holdUntil = 0;
+let retakeArmed = false;
+let seenIndex = null;
+let imgBad = false;
+function frame(){ view.src = "/frame.jpg?t=" + Date.now(); }
+view.onload = () => { imgBad = false; setTimeout(frame, 200); };
+view.onerror = () => { imgBad = true; document.getElementById("stale").hidden = false; setTimeout(frame, 800); };
+frame();
 function show(body){
+  if (body.index !== seenIndex) {
+    seenIndex = body.index;
+    retakeArmed = false;
+  }
   document.getElementById("line").textContent = body.instruction;
   document.getElementById("count").textContent = body.count;
+  document.getElementById("caption").textContent = body.count;
   document.getElementById("note").textContent = body.note || "";
+  const focus = body.focus == null ? "" : "Focus " + body.focus + ", exposure " + body.exposure;
+  document.getElementById("lockline").textContent = focus;
+  document.getElementById("warn").textContent = body.lockWarning || "";
+  const stale = imgBad || body.frameAge == null || body.frameAge > 2;
+  document.getElementById("stale").hidden = !stale;
   document.getElementById("lock").hidden = body.phase !== "lock";
   document.getElementById("keep").hidden = body.phase !== "confirm";
   document.getElementById("retry").hidden = body.phase !== "confirm";
   document.getElementById("save").hidden = body.phase !== "pour";
+  document.getElementById("replace").hidden = !body.canReplace;
   document.getElementById("retake").hidden = !body.canRetake;
+  document.getElementById("retake").textContent = retakeArmed ? "Retake?" : labels.retake;
   if (!busy) {
-    document.getElementById("lock").disabled = false;
-    document.getElementById("keep").disabled = false;
-    document.getElementById("retry").disabled = false;
-    document.getElementById("save").disabled = false;
-    document.getElementById("retake").disabled = false;
+    buttons.forEach(button => {
+      button.disabled = false;
+      if (button.id !== "retake") button.textContent = labels[button.id];
+    });
   }
 }
 async function poll(){
-  try { show(await fetch("/status.json", {cache:"no-store"}).then(r => r.json())); }
-  catch (e) {}
+  const seen = epoch;
+  try {
+    const body = await fetch("/status.json", {cache:"no-store"}).then(r => r.json());
+    if (seen !== epoch || Date.now() < holdUntil) return;
+    show(body);
+  } catch (e) {}
 }
+function sleep(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
 async function press(id, path){
-  if (busy) return;
+  if (busy || Date.now() < holdUntil) return;
   busy = true;
-  document.getElementById(id).disabled = true;
-  try { show(await fetch(path, {method:"POST", cache:"no-store"}).then(r => r.json())); }
-  catch (e) { document.getElementById("note").textContent = "That step did not finish."; }
+  epoch++;
+  buttons.forEach(button => { button.disabled = true; });
+  const button = document.getElementById(id);
+  if (working[id]) button.textContent = working[id];
+  let body = null;
+  try {
+    body = await fetch(path, {method:"POST", cache:"no-store"}).then(r => r.json());
+    epoch++;
+    show(body);
+  } catch (e) {
+    epoch++;
+    document.getElementById("note").textContent = "That step did not finish.";
+  }
+  if (path === "/save" && body && (body.note || "").startsWith("Saved ")) {
+    holdUntil = Date.now() + 400;
+    await sleep(400);
+  }
   busy = false;
-  poll();
+  if (body) show(body);
+  else buttons.forEach(button => { button.disabled = false; });
 }
 document.getElementById("lock").onclick = () => press("lock", "/lock");
 document.getElementById("keep").onclick = () => press("keep", "/accept");
 document.getElementById("retry").onclick = () => press("retry", "/retry");
 document.getElementById("save").onclick = () => press("save", "/save");
-document.getElementById("retake").onclick = () => press("retake", "/retake");
+document.getElementById("replace").onclick = () => press("replace", "/replace");
+document.getElementById("retake").onclick = () => {
+  if (!retakeArmed) {
+    retakeArmed = true;
+    document.getElementById("retake").textContent = "Retake?";
+    return;
+  }
+  retakeArmed = false;
+  press("retake", "/retake");
+};
+if (navigator.wakeLock) {
+  const ask = () => navigator.wakeLock.request("screen").catch(() => {});
+  ask();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") ask();
+  });
+}
 setInterval(poll, 250);
 poll();
 </script>
@@ -610,6 +863,8 @@ class Handler(BaseHTTPRequestHandler):
                 save_current()
             elif path == "/retake":
                 retake_last()
+            elif path == "/replace":
+                replace_current()
             else:
                 self.send_error(404)
                 return
