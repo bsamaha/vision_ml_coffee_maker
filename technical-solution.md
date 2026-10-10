@@ -55,10 +55,14 @@ Open http://raspberrypi.local:8080. That page is `check/capture.py`. It shows th
 
 After the lock is kept, the page names one stop at a time. Stand where the camera cannot see you, then press Save this picture. That press writes one file and names the next stop. A second tap while the first press is still working does not write another file. A Ninja cup is 5 fl oz. 14 MAX is 70 fl oz. Fills under 17.5 fl oz, which is under 25%, say alarm.
 
-The shoot is 24 pictures, in this order:
+The shoot is 18 pictures. The carafe can be full or empty. Only the reservoir is in the picture. Four turns, camera stays put:
 
-1. **Hero climb** (camera locked, looking down a little, graduated face). Empty, then 1 cup, then the even cup lines to 14 MAX. At empty, 8 cups, and 14 MAX, yaw the brewer about 25 degrees, save, and put the face back square. 12 pictures. First file is `train/hero_0cup_0.0oz_0.0pct.jpg`.
-2. **Back descend** (camera still locked). Turn the whole brewer so the back of the tank is square. Save 14 MAX, then remove water on the even cup lines down through 1 cup to empty. At 14, 8, and empty, yaw about 25 degrees, save, and put the back square again. 12 pictures.
+- **Squared tank.** Cup marks face the camera.
+- **Rotated right.** Buttons on the left, reservoir on the right. This is the angle in `train/2026-10-09-first-try/`.
+- **Rotated left.** The other way: reservoir on the left, buttons on the right.
+- **Face on.** Buttons face the camera.
+
+Pour on Squared tank: empty, 1 cup, 2 cups, then the even lines through 14. At empty, 8 cups, and 14 cups, also save Rotated right, Rotated left, and Face on. First file is `train/square_0cup_0.0oz_0.0pct.jpg`.
 
 Retake the last picture deletes that file and shows the same stop again. Save does not skip a filename that is already in train/. Replace clears that current file. A reload does not take another picture. If the process restarts, it continues at the first missing file. `train/` is what you label. Leave `train/2026-10-09-first-try/` out of the upload. These files are already flipped. The accuracy number uses fresh fills after training, not these files.
 

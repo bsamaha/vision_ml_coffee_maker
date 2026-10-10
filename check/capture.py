@@ -64,70 +64,56 @@ def _cups_unit(count):
     return "cup" if count == 1 else "cups"
 
 
+POSE_LABEL = {
+    "square": "Squared tank",
+    "right": "Rotated right",
+    "left": "Rotated left",
+    "face": "Face on",
+}
+
+
+def water_words(cups):
+    cups = int(cups)
+    if cups == 0:
+        return "empty"
+    if cups == 1:
+        return "1 cup"
+    return f"{cups} cups"
+
+
+def _pose_sentence(pose):
+    if pose == "square":
+        return "Squared tank. Cup marks face the camera."
+    if pose == "right":
+        return "Rotated right. Buttons on the left, reservoir on the right."
+    if pose == "left":
+        return "Rotated left. Reservoir on the left, buttons on the right."
+    if pose == "face":
+        return "Face on. Buttons face the camera."
+    raise ValueError(pose)
+
+
 def _instruction(pose, cups, action, delta, restore):
-    fill = _fill_words(cups)
-    settle = "Let the surface settle, then stand clear. Press Save this picture."
-    no_pour = "Do not pour. Stand clear, then press Save this picture."
-    if action == "SET":
-        body = (
-            "WARM is 0. The machine is off. The carafe is seated and empty. "
-            "The reservoir is empty. Graduated face square to the camera. "
-            "Camera looks down a little. "
-        )
-        tail = settle
-    elif action == "YAW":
-        body = (
-            "Yaw the brewer about 25 degrees. Keep the whole tank in frame. "
-            "Do not move the camera. Water stays. "
-        )
-        tail = no_pour
-    elif action == "ADD":
-        baking = ", not a baking cup" if cups == 1 else ""
-        body = (
-            f"Add {delta} {_cups_unit(delta)} ({delta * 5} fl oz{baking}). "
-            f"Stop at {_amount(Decimal(cups))} {_cups_unit(cups)}. Graduated face square. "
-        )
-        tail = settle
-    elif action == "TURN":
-        body = (
-            "Turn the whole brewer so the back of the tank is square to the camera. "
-            "Leave the camera. Water stays at 14 MAX. "
-        )
-        tail = no_pour
-    elif action == "REMOVE":
-        empty = "The reservoir is empty. " if cups == 0 else ""
-        face = "Back of the tank square. "
-        body = (
-            f"Remove {delta} {_cups_unit(delta)} ({delta * 5} fl oz). "
-            f"Stop at {_amount(Decimal(cups))} {_cups_unit(cups)}. {face}{empty}"
-        )
-        tail = settle
-    else:
-        raise ValueError(action)
-    if restore == "face":
-        tail += " Then put the graduated face back square."
-    elif restore == "back":
-        tail += " Then put the back of the tank square again."
-    return f"{body}{tail} {fill}."
+    level = f"Water: {water_words(cups)}."
+    save = "Stand out of the picture. Save."
+    if action == "ADD":
+        pour = f"Pour to {water_words(cups)}."
+        if cups == 1:
+            pour += " A Ninja cup is 5 fl oz, not a baking cup."
+        if restore == "pose":
+            return f"{_pose_sentence(pose)} {pour} {save}"
+        return f"{pour} {save}"
+    return f"{_pose_sentence(pose)} {level} {save}"
 
 
 def step_header(step, number):
-    label = "Hero" if step.pose.startswith("hero") else "Back"
-    cups = _amount(Decimal(step.cups))
-    if step.action == "SET":
-        detail = "empty"
-    elif step.action in ("YAW", "TURN"):
-        detail = f"stay at {cups} cups"
-    elif step.action == "ADD":
-        detail = f"add {step.delta} {_cups_unit(step.delta)}"
-    else:
-        detail = f"stop at {cups} {_cups_unit(step.cups)}"
-    return f"{label} {number} of {len(STEPS)} · {step.action} · {detail}"
+    return f"{number} of {len(STEPS)} · Water: {water_words(step.cups)} · {POSE_LABEL[step.pose]}"
 
 
 def build_steps():
-    # Hero climb, then back descend. 24 pictures. Camera stays put.
-    # A Ninja cup is 5 fl oz. 14 MAX is 70 fl oz. Offsets are about 25 degrees.
+    # Squared tank up the cup lines. At empty, 8, and 14, also shoot the other three angles.
+    # Rotated right matches train/2026-10-09-first-try. Rotated left is that turn the other way.
+    # The carafe is not part of the picture. A Ninja cup is 5 fl oz. 14 is 70 fl oz.
     steps = []
 
     def add(pose, cups, action, delta=0, restore=""):
@@ -143,26 +129,22 @@ def build_steps():
             )
         )
 
-    add("hero", 0, "SET")
-    add("hero-off", 0, "YAW", restore="face")
-    add("hero", 1, "ADD", 1)
-    add("hero", 2, "ADD", 1)
+    add("square", 0, "SET")
+    add("right", 0, "TURN")
+    add("left", 0, "TURN")
+    add("face", 0, "TURN")
+    add("square", 1, "ADD", 1, "pose")
+    add("square", 2, "ADD", 1)
     for cups in (4, 6, 8):
-        add("hero", cups, "ADD", 2)
-    add("hero-off", 8, "YAW", restore="face")
+        add("square", cups, "ADD", 2)
+    add("right", 8, "TURN")
+    add("left", 8, "TURN")
+    add("face", 8, "TURN")
     for cups in (10, 12, 14):
-        add("hero", cups, "ADD", 2)
-    add("hero-off", 14, "YAW")
-    add("back", 14, "TURN")
-    add("back-off", 14, "YAW", restore="back")
-    for cups in (12, 10, 8):
-        add("back", cups, "REMOVE", 2)
-    add("back-off", 8, "YAW", restore="back")
-    for cups in (6, 4, 2):
-        add("back", cups, "REMOVE", 2)
-    add("back", 1, "REMOVE", 1)
-    add("back", 0, "REMOVE", 1)
-    add("back-off", 0, "YAW")
+        add("square", cups, "ADD", 2, "pose" if cups == 10 else "")
+    add("right", 14, "TURN")
+    add("left", 14, "TURN")
+    add("face", 14, "TURN")
     return tuple(steps)
 
 
@@ -642,7 +624,7 @@ def status():
     if pair is None:
         phase = "lock"
         instruction = (
-            "Empty the reservoir. Seat the carafe. Turn the machine off. "
+            "Empty the reservoir. Turn the machine off. "
             "Stand where the camera cannot see you. When the reservoir looks sharp and bright, "
             "press Lock this picture."
         )
