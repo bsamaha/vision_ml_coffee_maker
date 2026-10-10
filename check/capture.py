@@ -262,8 +262,13 @@ img{width:100vw;flex:1 1 auto;min-height:0;object-fit:contain;background:#000;di
 <button id=lock type=button>Lock this picture</button>
 <button id=save type=button>Save picture</button>
 </div>
-<img src="/stream.mjpg" alt="camera">
+<img id=view alt="camera">
 <script>
+const view = document.getElementById("view");
+function frame(){ view.src = "/frame.jpg?t=" + Date.now(); }
+view.onload = () => setTimeout(frame, 200);
+view.onerror = () => setTimeout(frame, 800);
+frame();
 function show(body){
   document.getElementById("line").textContent = body.instruction;
   const locked = body.locked ? "Locked. Focus " + body.focus + ", exposure " + body.exposure + ". " : "";
