@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One press, one still, then upload it to the Roboflow project.
+"""One press saves one still. Send batch uploads that group and resets the count.
 
 Open http://<pi>:8080. Pictures go to train/2026-10-10-clear-water-rapid/.
 """
@@ -8,8 +8,10 @@ import json
 import os
 import sys
 import threading
+import time
 import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,6 +27,7 @@ KEY_FILE = Path("/home/bs/tank-envs/roboflow.env")
 saved = 0
 next_n = 1
 note = ""
+pending = []
 state_lock = threading.Lock()
 
 
@@ -65,10 +68,10 @@ def api_key():
     return ""
 
 
-def upload_image(path):
+def upload_image(path, batch):
     key = api_key()
     if not key:
-        return f"Saved {path.name}. No Roboflow key on this machine."
+        return "No Roboflow key on this machine."
     boundary = "----tankboundary"
     payload = path.read_bytes()
     chunks = []
@@ -80,8 +83,6 @@ def upload_image(path):
 
     field("name", path.name)
     field("split", "train")
-    field("batch", "clear-water-rapid")
-    field("tag", "clear-water-rapid")
     chunks.append(
         (
             f"--{boundary}\r\n"
@@ -93,8 +94,9 @@ def upload_image(path):
     )
     chunks.append(f"--{boundary}--\r\n".encode())
     body = b"".join(chunks)
+    query = urllib.parse.urlencode({"api_key": key, "batch": batch, "tag": "clear-water-rapid"})
     request = urllib.request.Request(
-        f"https://api.roboflow.com/dataset/{PROJECT}/upload?api_key={key}",
+        f"https://api.roboflow.com/dataset/{PROJECT}/upload?{query}",
         data=body,
         method="POST",
     )
@@ -104,10 +106,34 @@ def upload_image(path):
             response.read()
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode(errors="replace")[:180]
-        return f"Saved {path.name}. Upload failed ({exc.code}). {detail}"
+        return f"Upload failed on {path.name} ({exc.code}). {detail}"
     except OSError as exc:
-        return f"Saved {path.name}. Upload failed. {exc}"
-    return f"Saved {path.name} and uploaded it."
+        return f"Upload failed on {path.name}. {exc}"
+    return ""
+
+
+def send_batch():
+    global saved
+    with state_lock:
+        paths = list(pending)
+    if not paths:
+        set_note("No pictures to send.")
+        return
+    batch = time.strftime("clear-water-%H%M%S")
+    sent = []
+    for path in paths:
+        error = upload_image(path, batch)
+        if error:
+            with state_lock:
+                pending[:] = [item for item in pending if item not in sent]
+                saved = len(pending)
+            set_note(error)
+            return
+        sent.append(path)
+    with state_lock:
+        pending.clear()
+        saved = 0
+    set_note(f"Sent {len(sent)} pictures.")
 
 
 def take_one():
@@ -130,8 +156,9 @@ def take_one():
         set_note("That frame was not a full picture. Press again.")
         return
     with state_lock:
-        saved += 1
-    set_note(upload_image(path))
+        pending.append(path)
+        saved = len(pending)
+    set_note(f"Saved {path.name}")
 
 
 def status():
@@ -164,9 +191,10 @@ button{font:28px sans-serif;padding:18px 22px;margin:0 8px 8px 0;touch-action:ma
 </style>
 <div id=bar>
 <p id=count>0 saved</p>
-<p id=line>One press saves one picture and uploads it.</p>
+<p id=line>Capture Image takes one picture. Send batch uploads this group and resets the count.</p>
 <p id=note></p>
 <button id=save type=button>Capture Image</button>
+<button id=send type=button>Send batch</button>
 <button id=darker type=button>Darker</button>
 <button id=brighter type=button>Brighter</button>
 </div>
@@ -205,6 +233,7 @@ async function press(path){
   busy = false;
 }
 document.getElementById("save").onclick = () => press("/save");
+document.getElementById("send").onclick = () => press("/send");
 document.getElementById("darker").onclick = () => press("/darker");
 document.getElementById("brighter").onclick = () => press("/brighter");
 if (navigator.wakeLock) {
@@ -244,6 +273,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/save":
                 take_one()
+            elif path == "/send":
+                send_batch()
             elif path == "/darker":
                 capture.nudge_exposure(2 / 3)
                 set_note(capture.note)
@@ -272,7 +303,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     next_n = next_index()
-    saved = next_n - 1
+    saved = 0
     threading.Thread(target=capture.capture, daemon=True).start()
     print(f"rapid capture on :8080 writing {OUT}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
