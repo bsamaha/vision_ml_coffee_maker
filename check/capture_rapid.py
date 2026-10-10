@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Rapid stills. One button saves a new frame about twice a second.
+"""One press, one still, then upload it to the Roboflow project.
 
 Open http://<pi>:8080. Pictures go to train/2026-10-10-clear-water-rapid/.
 """
 
 import json
+import os
 import sys
 import threading
-import time
 import traceback
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -17,9 +19,9 @@ import capture
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "train" / "2026-10-10-clear-water-rapid"
-INTERVAL = 0.5
+PROJECT = "blake-samaha-s-workspace/rate-and-volume-of-coffee"
+KEY_FILE = Path("/home/bs/tank-envs/roboflow.env")
 
-firing = False
 saved = 0
 next_n = 1
 note = ""
@@ -45,48 +47,99 @@ def next_index():
     return max(nums, default=0) + 1
 
 
-def rapid_loop():
+def api_key():
+    found = os.environ.get("ROBOFLOW_API_KEY", "").strip()
+    if found:
+        return found
+    for path in (KEY_FILE, ROOT / ".env"):
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        for line in text.splitlines():
+            line = line.split("#", 1)[0].strip()
+            if line.startswith("ROBOFLOW_API_KEY="):
+                value = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if value:
+                    return value
+    return ""
+
+
+def upload_image(path):
+    key = api_key()
+    if not key:
+        return f"Saved {path.name}. No Roboflow key on this machine."
+    boundary = "----tankboundary"
+    payload = path.read_bytes()
+    chunks = []
+
+    def field(name, value):
+        chunks.append(
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode()
+        )
+
+    field("name", path.name)
+    field("split", "train")
+    field("batch", "clear-water-rapid")
+    field("tag", "clear-water-rapid")
+    chunks.append(
+        (
+            f"--{boundary}\r\n"
+            f"Content-Disposition: form-data; name=\"file\"; filename=\"{path.name}\"\r\n"
+            "Content-Type: image/jpeg\r\n\r\n"
+        ).encode()
+        + payload
+        + b"\r\n"
+    )
+    chunks.append(f"--{boundary}--\r\n".encode())
+    body = b"".join(chunks)
+    request = urllib.request.Request(
+        f"https://api.roboflow.com/{PROJECT}/upload?api_key={key}",
+        data=body,
+        method="POST",
+    )
+    request.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            response.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")[:180]
+        return f"Saved {path.name}. Upload failed ({exc.code}). {detail}"
+    except OSError as exc:
+        return f"Saved {path.name}. Upload failed. {exc}"
+    return f"Saved {path.name} and uploaded it."
+
+
+def take_one():
     global saved, next_n
-    last_seq = -1
-    while True:
+    with capture.frame_lock:
+        jpg = bytes(capture.latest)
+    if not jpg:
+        set_note("The camera has no frame yet.")
+        return
+    with state_lock:
+        number = next_n
+        next_n += 1
+    OUT.mkdir(parents=True, exist_ok=True)
+    path = OUT / f"{number:04d}.jpg"
+    path.write_bytes(jpg)
+    if not capture.is_jpeg(path):
+        path.unlink(missing_ok=True)
         with state_lock:
-            go = firing
-        if not go:
-            time.sleep(0.05)
-            continue
-        with capture.frame_lock:
-            seq = capture.frame_seq
-            jpg = bytes(capture.latest)
-        if not jpg or seq == last_seq:
-            time.sleep(0.05)
-            continue
-        last_seq = seq
-        with state_lock:
-            number = next_n
-            next_n += 1
-        OUT.mkdir(parents=True, exist_ok=True)
-        path = OUT / f"{number:04d}.jpg"
-        path.write_bytes(jpg)
-        if not capture.is_jpeg(path):
-            path.unlink(missing_ok=True)
-            with state_lock:
-                next_n = number
-            time.sleep(0.05)
-            continue
-        with state_lock:
-            saved += 1
-        set_note(f"Saved {path.name}")
-        time.sleep(INTERVAL)
+            next_n = number
+        set_note("That frame was not a full picture. Press again.")
+        return
+    with state_lock:
+        saved += 1
+    set_note(upload_image(path))
 
 
 def status():
     pair = capture.read_lock()
     with state_lock:
         count = saved
-        on = firing
         shown = note
     return {
-        "firing": on,
         "saved": count,
         "folder": "train/2026-10-10-clear-water-rapid",
         "focus": None if pair is None else pair[0],
@@ -105,16 +158,15 @@ body{background:#111;color:#fff;font:22px sans-serif;display:flex;flex-direction
 #bar{padding:12px 16px;flex:0 0 auto}
 #count{font:700 48px sans-serif;margin:0 0 8px}
 button{font:28px sans-serif;padding:18px 22px;margin:0 8px 8px 0;touch-action:manipulation}
-#fire.on{background:#c33;color:#fff}
 #stage{position:relative;flex:1 1 auto;min-height:50vh;background:#000}
 #view{width:100%;height:100%;object-fit:contain;background:#000;display:block}
 #stale{position:absolute;left:12px;top:12px;margin:0;background:#a30;color:#fff;font:700 28px sans-serif;padding:8px 12px}
 </style>
 <div id=bar>
 <p id=count>0 saved</p>
-<p id=line>Move the coffee maker. Press Rapid fire. Press it again to stop.</p>
+<p id=line>Each press takes one picture and uploads it.</p>
 <p id=note></p>
-<button id=fire type=button>Rapid fire</button>
+<button id=save type=button>Take picture</button>
 <button id=darker type=button>Darker</button>
 <button id=brighter type=button>Brighter</button>
 </div>
@@ -125,6 +177,7 @@ button{font:28px sans-serif;padding:18px 22px;margin:0 8px 8px 0;touch-action:ma
 <script>
 const view = document.getElementById("view");
 let imgBad = false;
+let busy = false;
 function frame(){ view.src = "/frame.jpg?t=" + Date.now(); }
 view.onload = () => { imgBad = false; setTimeout(frame, 200); };
 view.onerror = () => { imgBad = true; document.getElementById("stale").hidden = false; setTimeout(frame, 800); };
@@ -132,23 +185,28 @@ frame();
 function show(body){
   document.getElementById("count").textContent = body.saved + " saved";
   document.getElementById("note").textContent = body.note || "";
-  const fire = document.getElementById("fire");
-  fire.textContent = body.firing ? "Stop" : "Rapid fire";
-  fire.classList.toggle("on", body.firing);
   const stale = imgBad || body.frameAge == null || body.frameAge > 2;
   document.getElementById("stale").hidden = !stale;
+  if (!busy) document.getElementById("save").disabled = false;
 }
 async function poll(){
   try { show(await fetch("/status.json", {cache:"no-store"}).then(r => r.json())); }
   catch (e) {}
 }
-async function press(path){
+async function press(id, path){
+  if (busy) return;
+  busy = true;
+  document.getElementById("save").disabled = true;
+  if (id === "save") document.getElementById("save").textContent = "Saving…";
   try { show(await fetch(path, {method:"POST", cache:"no-store"}).then(r => r.json())); }
   catch (e) { document.getElementById("note").textContent = "That press did not finish."; }
+  busy = false;
+  document.getElementById("save").textContent = "Take picture";
+  document.getElementById("save").disabled = false;
 }
-document.getElementById("fire").onclick = () => press("/fire");
-document.getElementById("darker").onclick = () => press("/darker");
-document.getElementById("brighter").onclick = () => press("/brighter");
+document.getElementById("save").onclick = () => press("save", "/save");
+document.getElementById("darker").onclick = () => press("darker", "/darker");
+document.getElementById("brighter").onclick = () => press("brighter", "/brighter");
 if (navigator.wakeLock) {
   const ask = () => navigator.wakeLock.request("screen").catch(() => {});
   ask();
@@ -166,8 +224,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path == "/status.json":
-            body = json.dumps(status()).encode()
-            self._send(body, "application/json")
+            self._send(json.dumps(status()).encode(), "application/json")
             return
         if path == "/frame.jpg":
             with capture.frame_lock:
@@ -183,13 +240,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
-        global firing
         path = self.path.split("?", 1)[0]
         try:
-            if path == "/fire":
-                with state_lock:
-                    firing = not firing
-                set_note("Rapid fire on." if firing else "Rapid fire off.")
+            if path == "/save":
+                take_one()
             elif path == "/darker":
                 capture.nudge_exposure(2 / 3)
                 set_note(capture.note)
@@ -218,7 +272,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     next_n = next_index()
+    saved = next_n - 1
     threading.Thread(target=capture.capture, daemon=True).start()
-    threading.Thread(target=rapid_loop, daemon=True).start()
     print(f"rapid capture on :8080 writing {OUT}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
