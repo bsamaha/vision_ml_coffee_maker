@@ -62,7 +62,7 @@ The shoot is 18 pictures. The carafe can be full or empty. Only the reservoir is
 - **Rotated left.** The other way: reservoir on the left, buttons on the right.
 - **Face on.** Buttons face the camera.
 
-Pour on Squared tank: empty, 1 cup, 2 cups, then the even lines through 14. At empty, 8 cups, and 14 cups, also save Rotated right, Rotated left, and Face on. First file is `train/square_0cup_0.0oz_0.0pct.jpg`.
+Pour on Squared tank: empty, 1 cup, 2 cups, then the even lines through 14. At empty, 8 cups, and 14 cups, also save Rotated right, Rotated left, and Face on. The cup line is only where you stop pouring. The file name does not store ounces or a percent. First file is `train/square_empty.jpg`. The level is the box ratio after the pictures are labeled.
 
 Retake the last picture deletes that file and shows the same stop again. Save does not skip a filename that is already in train/. Replace clears that current file. A reload does not take another picture. If the process restarts, it continues at the first missing file. `train/` is what you label. Leave `train/2026-10-09-first-try/` out of the upload. These files are already flipped. The accuracy number uses fresh fills after training, not these files.
 

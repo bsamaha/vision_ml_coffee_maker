@@ -49,8 +49,8 @@ def _fill(cups):
 
 
 def _filename(pose, cups):
-    cups, oz, pct = _fill(cups)
-    return f"{pose}_{_amount(cups)}cup_{oz:.1f}oz_{pct}pct.jpg"
+    mark = "empty" if int(cups) == 0 else str(int(cups))
+    return f"{pose}_{mark}.jpg"
 
 
 def _fill_words(cups):
