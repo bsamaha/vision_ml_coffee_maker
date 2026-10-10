@@ -36,14 +36,14 @@ The water line is the top of that bright band. Percent full is how high the line
 
 Do this once, before the stills you keep. The aim does not change after it.
 
-On the capture page, look at the live picture. When the reservoir is sharp and bright, press Lock this picture. The page reads `focus_absolute` and `exposure_time_absolute` and writes them to `/home/bs/tank-envs/camera.conf`.
+On the capture page, look at the live picture. When the reservoir is sharp and bright, press Lock this picture. The page reads `focus_absolute`, then tries manual exposures until the picture stays as bright as the automatic one. It writes the match to `/home/bs/tank-envs/camera.conf`. The control's idle reading is 166. Writing 166 makes the picture dark, so the page does not use that reading. The press takes a few seconds. The line under the buttons, and `/tmp/preview.log`, show each exposure it tries.
 
 ```
 focus_absolute=<settled value>
 exposure_time_absolute=<settled value>
 ```
 
-`check/capture.py` applies `power_line_frequency=2`, manual focus, that focus value, `auto_exposure=1`, then `exposure_time_absolute`, every time it opens the camera. Manual exposure without the absolute value blacks the frame. The page shows the two numbers after the lock. Confirm the picture is still bright and sharp before you press Save picture.
+`check/capture.py` applies `power_line_frequency=2`, manual focus, that focus value, `auto_exposure=1`, then the matched `exposure_time_absolute`, every time it opens the camera. The page shows the two numbers after the lock. Confirm the picture is still bright and sharp before you press Save picture. A press that fails is printed in `/tmp/preview.log` and on the page.
 
 ## 2. Capture
 

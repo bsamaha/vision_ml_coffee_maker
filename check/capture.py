@@ -5,8 +5,10 @@ import json
 import subprocess
 import threading
 import time
+import traceback
 from decimal import Decimal, ROUND_HALF_UP
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import BytesIO
 from pathlib import Path
 from typing import NamedTuple
 
@@ -83,9 +85,12 @@ FFMPEG = [
 ]
 
 latest = b""
+frame_seq = 0
 frame_lock = threading.Lock()
 script_lock = threading.Lock()
+locking = threading.Event()
 index = 0
+note = ""
 
 
 def read_lock():
@@ -113,6 +118,13 @@ def conf_text():
         return None
 
 
+def set_note(text):
+    global note
+    with script_lock:
+        note = text
+    print(text, flush=True)
+
+
 def read_ctrl(name):
     result = subprocess.run(
         ["v4l2-ctl", "-d", "/dev/video0", "-C", name],
@@ -129,19 +141,111 @@ def read_ctrl(name):
         return None
 
 
+def set_ctrl(name, value):
+    subprocess.run(
+        ["v4l2-ctl", "-d", "/dev/video0", "-c", f"{name}={value}"],
+        check=False,
+    )
+
+
+def jpeg_brightness(jpg):
+    from PIL import Image
+
+    image = Image.open(BytesIO(jpg)).convert("L").resize((64, 36))
+    hist = image.histogram()
+    count = sum(hist)
+    if count == 0:
+        return None
+    return sum(i * n for i, n in enumerate(hist)) / count
+
+
+def sample_brightness():
+    with frame_lock:
+        seq = frame_seq
+    time.sleep(0.5)
+    deadline = time.monotonic() + 1.0
+    jpg = b""
+    while time.monotonic() < deadline:
+        with frame_lock:
+            if frame_seq > seq and latest:
+                jpg = bytes(latest)
+                break
+        time.sleep(0.05)
+    if not jpg:
+        with frame_lock:
+            jpg = bytes(latest)
+    if not jpg:
+        return None
+    return jpeg_brightness(jpg)
+
+
+def match_exposure(target):
+    # The control's idle reading is 166, and writing that number makes the picture dark.
+    # Search for the manual value that keeps the automatic picture's brightness.
+    low, high = 3, 2047
+    best = None
+    best_err = 10**9
+    for _ in range(8):
+        if low > high:
+            break
+        guess = (low + high) // 2
+        set_ctrl("auto_exposure", 1)
+        set_ctrl("exposure_time_absolute", guess)
+        level = sample_brightness()
+        if level is None:
+            return best
+        err = abs(level - target)
+        set_note(f"Trying exposure {guess}. Brightness {level:.0f}, target {target:.0f}.")
+        if err < best_err:
+            best, best_err = guess, err
+        if err <= 12:
+            return guess
+        if level < target:
+            low = guess + 1
+        else:
+            high = guess - 1
+    if best is not None:
+        set_ctrl("auto_exposure", 1)
+        set_ctrl("exposure_time_absolute", best)
+    return best
+
+
+def release_controls():
+    set_ctrl("focus_automatic_continuous", 1)
+    set_ctrl("auto_exposure", 3)
+
+
 def lock_current():
-    focus = read_ctrl("focus_absolute")
-    exposure = read_ctrl("exposure_time_absolute")
-    if focus is None or exposure is None:
-        return False
-    CONF.parent.mkdir(parents=True, exist_ok=True)
-    CONF.write_text(f"focus_absolute={focus}\nexposure_time_absolute={exposure}\n")
-    apply_controls(focus, exposure)
-    return True
+    locking.set()
+    try:
+        focus = read_ctrl("focus_absolute")
+        if focus is None:
+            set_note("Lock failed. The camera did not report focus.")
+            return False
+        set_ctrl("power_line_frequency", 2)
+        set_ctrl("focus_automatic_continuous", 0)
+        set_ctrl("focus_absolute", focus)
+        set_ctrl("auto_exposure", 3)
+        set_note("Locking. Matching the bright picture.")
+        target = sample_brightness()
+        if target is None:
+            release_controls()
+            set_note("Lock failed. The camera has no frame yet.")
+            return False
+        exposure = match_exposure(target)
+        if exposure is None:
+            release_controls()
+            set_note("Lock failed. Exposure was left on automatic.")
+            return False
+        CONF.parent.mkdir(parents=True, exist_ok=True)
+        CONF.write_text(f"focus_absolute={focus}\nexposure_time_absolute={exposure}\n")
+        set_note(f"Locked. Focus {focus}, exposure {exposure}.")
+        return True
+    finally:
+        locking.clear()
 
 
 def apply_controls(focus, exposure):
-    # Manual exposure without the absolute value blacks the frame, so the absolute is last.
     pairs = (
         ("power_line_frequency", 2),
         ("focus_automatic_continuous", 0),
@@ -150,10 +254,7 @@ def apply_controls(focus, exposure):
         ("exposure_time_absolute", exposure),
     )
     for name, value in pairs:
-        subprocess.run(
-            ["v4l2-ctl", "-d", "/dev/video0", "-c", f"{name}={value}"],
-            check=False,
-        )
+        set_ctrl(name, value)
 
 
 def first_missing():
@@ -164,20 +265,33 @@ def first_missing():
 
 
 def capture():
-    global latest
+    global latest, frame_seq
     applied = object()
     while True:
         lock = read_lock()
         token = conf_text()
-        if lock is not None and token != applied:
-            apply_controls(*lock)
-            applied = token
         proc = subprocess.Popen(FFMPEG, stdout=subprocess.PIPE)
+        if not locking.is_set():
+            if lock is None:
+                release_controls()
+                applied = object()
+            elif token != applied:
+                apply_controls(*lock)
+                applied = token
         buf = b""
         try:
             while True:
-                if token != conf_text():
-                    break
+                if not locking.is_set():
+                    new = conf_text()
+                    if new != token:
+                        token = new
+                        lock = read_lock()
+                        if lock is None:
+                            release_controls()
+                            applied = object()
+                        else:
+                            apply_controls(*lock)
+                            applied = token
                 chunk = proc.stdout.read(8192)
                 if not chunk:
                     break
@@ -195,6 +309,7 @@ def capture():
                     buf = buf[end + 2 :]
                     with frame_lock:
                         latest = jpg
+                        frame_seq += 1
         finally:
             proc.kill()
             proc.wait()
@@ -202,27 +317,37 @@ def capture():
 
 
 def save_current():
+    global index
     if read_lock() is None:
+        set_note("Save picture wrote nothing. The camera is not locked.")
         return
     with frame_lock:
         jpg = bytes(latest)
     if not jpg:
+        set_note("Save picture wrote nothing. The camera has no frame yet.")
         return
+    message = ""
     with script_lock:
         i = index
         if i >= len(STEPS):
-            return
-        path = TRAIN / STEPS[i].filename
-        if not path.is_file():
-            TRAIN.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(jpg)
-        index = i + 1
+            message = "The shoot is already done."
+        else:
+            path = TRAIN / STEPS[i].filename
+            if not path.is_file():
+                TRAIN.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(jpg)
+                message = f"Saved {path.name}"
+            else:
+                message = f"{path.name} was already there."
+            index = i + 1
+    set_note(message)
 
 
 def status():
     locked = read_lock() is not None
     with script_lock:
         i = index
+        shown = note
     done = i >= len(STEPS)
     if not locked:
         instruction = (
@@ -242,6 +367,7 @@ def status():
         "files": files,
         "done": done,
         "total": len(STEPS),
+        "note": shown,
     }
 
 
@@ -259,6 +385,7 @@ img{width:100vw;flex:1 1 auto;min-height:0;object-fit:contain;background:#000;di
 <div id=bar>
 <p id=line></p>
 <p id=count></p>
+<p id=note></p>
 <button id=lock type=button>Lock this picture</button>
 <button id=save type=button>Save picture</button>
 </div>
@@ -273,6 +400,7 @@ function show(body){
   document.getElementById("line").textContent = body.instruction;
   const locked = body.locked ? "Locked. Focus " + body.focus + ", exposure " + body.exposure + ". " : "";
   document.getElementById("count").textContent = locked + body.files + " of " + body.total + " pictures";
+  document.getElementById("note").textContent = body.note || "";
   document.getElementById("save").disabled = !body.locked || body.done;
 }
 async function poll(){
@@ -280,12 +408,16 @@ async function poll(){
   catch (e) {}
 }
 document.getElementById("lock").onclick = async () => {
+  const button = document.getElementById("lock");
+  button.disabled = true;
+  document.getElementById("note").textContent = "Locking. Matching the bright picture.";
   try { show(await fetch("/lock", {method:"POST", cache:"no-store"}).then(r => r.json())); }
-  catch (e) {}
+  catch (e) { document.getElementById("note").textContent = "Lock did not finish."; }
+  button.disabled = false;
 };
 document.getElementById("save").onclick = async () => {
   try { show(await fetch("/save", {method:"POST", cache:"no-store"}).then(r => r.json())); }
-  catch (e) {}
+  catch (e) { document.getElementById("note").textContent = "Save did not finish."; }
 };
 setInterval(poll, 250);
 poll();
@@ -348,13 +480,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
-        if path == "/lock":
-            lock_current()
-        elif path == "/save":
-            save_current()
-        else:
-            self.send_error(404)
-            return
+        try:
+            if path == "/lock":
+                lock_current()
+            elif path == "/save":
+                save_current()
+            else:
+                self.send_error(404)
+                return
+        except Exception:
+            traceback.print_exc()
+            set_note("That press failed. See /tmp/preview.log on the Pi.")
         body = json.dumps(status()).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
