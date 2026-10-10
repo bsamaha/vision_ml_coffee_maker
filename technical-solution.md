@@ -19,7 +19,7 @@ The water line is the top of that bright band. Percent full is how high the line
 - Training stills are 1280×720 MJPEG with the same `hflip,vflip` as the preview. Another size or an unflipped frame is a different picture from the one we checked.
 - Stop the preview before opening `/dev/video0` from anything else, or save stills from `http://127.0.0.1:8080/frame.jpg`. Two opens fight over the camera.
 - `power_line_frequency=2` is 60 Hz. Value 1 is 50 Hz.
-- Manual exposure is `auto_exposure=1`, then `exposure_time_absolute`. Switching to manual without the absolute value blacks the frame. `auto_exposure=3` is the current Aperture Priority mode.
+- Manual exposure is `auto_exposure=1`, then `exposure_time_absolute`. Switching to manual without the absolute value blacks the frame. `auto_exposure=3` is the current Aperture Priority mode. A bright morning clips that automatic picture. Lock then looks for a usable exposure instead of copying the white frame. Darker and Brighter on the capture page change the shutter and keep the same focus. Set that once, then leave it for the rest of the 24 stills.
 - Lock focus only after this aim is final: `focus_automatic_continuous=0`, then `focus_absolute` at the settled value. Set those again if a new capture process opens the camera. They do not always stick.
 - A Classic brew uses whatever is in the reservoir and empties it. The refill alarm will come on partway through a normal brew and stay on until someone pours. That is the alarm demo. It is not a fault in the page.
 - Set WARM to 0 and wait until the machine is off before pouring. With the plate on, water added to the reservoir starts another brew, so the pour and the pump run together.
@@ -38,7 +38,7 @@ Do this once, before the stills you keep. The aim does not change after it.
 
 The page walks one step at a time.
 
-1. Empty the reservoir, seat the carafe, and turn the machine off. Stand clear. When the reservoir looks sharp and bright, press Lock this picture. The page reads `focus_absolute`, then tries manual exposures until the picture stays as bright as the automatic one. The control's idle reading is 166. Writing 166 makes the picture dark, so the page does not use that reading. If the match is still dark, it leaves the camera on automatic and stays on this step.
+1. Empty the reservoir, seat the carafe, and turn the machine off. Stand clear. When the reservoir looks sharp, press Lock this picture. The page reads `focus_absolute`, then tries manual exposures. If the automatic picture is clipped white, it looks for a shorter exposure that keeps the tank visible. Otherwise it matches the automatic brightness. The control's idle reading is 166. Writing 166 makes the picture dark, so the page does not use that reading. If the match is still dark, it leaves the camera on automatic and stays on this step.
 2. Look again. Press Keep this lock, or Try again. Try again deletes the lock and returns to step 1.
 
 ```

@@ -30,6 +30,9 @@ OZ_PER_CUP = Decimal(5)
 FULL_OZ = Decimal(70)
 ALARM_OZ = Decimal("17.5")
 MIN_JPEG = 1024
+EXPOSURE_MIN = 3
+EXPOSURE_MAX = 2047
+USABLE_BRIGHTNESS = 120
 
 
 def _amount(number):
@@ -368,6 +371,12 @@ def lock_current():
             release_controls()
             set_note("Lock failed. The camera has no frame yet.")
             return False
+        if target > 180 or target < 60:
+            set_note(
+                f"Automatic brightness is {target:.0f}. "
+                "Looking for an exposure that keeps the tank visible."
+            )
+            target = USABLE_BRIGHTNESS
         exposure = match_exposure(target)
         if exposure is None:
             release_controls()
@@ -407,6 +416,34 @@ def retry_lock():
         set_note("Lock cleared. Look again, then press Lock this picture.")
     finally:
         locking.clear()
+        busy.release()
+
+
+def write_lock(focus, exposure, accepted):
+    text = f"focus_absolute={focus}\nexposure_time_absolute={exposure}\n"
+    if accepted:
+        text += "accepted=1\n"
+    CONF.parent.mkdir(parents=True, exist_ok=True)
+    CONF.write_text(text)
+
+
+def nudge_exposure(factor):
+    if not begin():
+        return
+    try:
+        pair = read_lock()
+        if pair is None:
+            set_note("Lock the picture before changing exposure.")
+            return
+        focus, exposure = pair
+        nxt = int(round(exposure * factor))
+        nxt = max(EXPOSURE_MIN, min(EXPOSURE_MAX, nxt))
+        if nxt == exposure:
+            nxt = exposure + (1 if factor > 1 else -1)
+            nxt = max(EXPOSURE_MIN, min(EXPOSURE_MAX, nxt))
+        write_lock(focus, nxt, lock_accepted())
+        set_note(f"Exposure {nxt}. Wait for the picture to settle, then leave it for the rest of the shoot.")
+    finally:
         busy.release()
 
 
@@ -641,6 +678,7 @@ def status():
         "pose": None if step is None else step.pose,
         "cups": None if step is None else step.cups,
         "filename": None if step is None else step.filename,
+        "canNudge": pair is not None,
         "canRetake": i > 0 and phase in ("pour", "done"),
         "canReplace": phase == "pour" and current is not None and is_jpeg(current),
         "count": count,
@@ -680,6 +718,8 @@ button{font:22px sans-serif;padding:14px 18px;margin:0 8px 8px 0;touch-action:ma
 <button id=retry type=button>Try again</button>
 <button id=save type=button>Save this picture</button>
 <button id=replace type=button>Replace this picture</button>
+<button id=darker type=button>Darker</button>
+<button id=brighter type=button>Brighter</button>
 <button id=retake type=button>Retake last</button>
 </div>
 <div id=stage>
@@ -689,13 +729,15 @@ button{font:22px sans-serif;padding:14px 18px;margin:0 8px 8px 0;touch-action:ma
 </div>
 <script>
 const view = document.getElementById("view");
-const buttons = ["lock","keep","retry","save","replace","retake"].map(id => document.getElementById(id));
+const buttons = ["lock","keep","retry","save","replace","darker","brighter","retake"].map(id => document.getElementById(id));
 const labels = {
   lock: "Lock this picture",
   keep: "Keep this lock",
   retry: "Try again",
   save: "Save this picture",
   replace: "Replace this picture",
+  darker: "Darker",
+  brighter: "Brighter",
   retake: "Retake last"
 };
 const working = {lock: "Locking…", save: "Saving…", replace: "Replacing…", retake: "Removing…"};
@@ -726,6 +768,8 @@ function show(body){
   document.getElementById("lock").hidden = body.phase !== "lock";
   document.getElementById("keep").hidden = body.phase !== "confirm";
   document.getElementById("retry").hidden = body.phase !== "confirm";
+  document.getElementById("darker").hidden = !body.canNudge;
+  document.getElementById("brighter").hidden = !body.canNudge;
   document.getElementById("save").hidden = body.phase !== "pour";
   document.getElementById("replace").hidden = !body.canReplace;
   document.getElementById("retake").hidden = !body.canRetake;
@@ -773,6 +817,8 @@ async function press(id, path){
 document.getElementById("lock").onclick = () => press("lock", "/lock");
 document.getElementById("keep").onclick = () => press("keep", "/accept");
 document.getElementById("retry").onclick = () => press("retry", "/retry");
+document.getElementById("darker").onclick = () => press("darker", "/darker");
+document.getElementById("brighter").onclick = () => press("brighter", "/brighter");
 document.getElementById("save").onclick = () => press("save", "/save");
 document.getElementById("replace").onclick = () => press("replace", "/replace");
 document.getElementById("retake").onclick = () => {
@@ -865,6 +911,10 @@ class Handler(BaseHTTPRequestHandler):
                 retake_last()
             elif path == "/replace":
                 replace_current()
+            elif path == "/darker":
+                nudge_exposure(2 / 3)
+            elif path == "/brighter":
+                nudge_exposure(3 / 2)
             else:
                 self.send_error(404)
                 return
