@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 CONF = Path("/home/bs/tank-envs/camera.conf")
-TRAIN = Path(__file__).resolve().parent.parent / "train"
-SHOOT = ""
+TRAIN = Path(__file__).resolve().parent.parent / "train" / "2026-10-10-clear-water-afternoon"
+SHOOT = "Train"
 
 
 class Step(NamedTuple):

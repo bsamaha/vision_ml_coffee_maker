@@ -62,15 +62,15 @@ The shoot is 18 pictures. The carafe can be full or empty. Only the reservoir is
 - **Rotated left.** The other way: reservoir on the left, buttons on the right.
 - **Face on.** Buttons face the camera.
 
-Pour on Squared tank: empty, 1 cup, 2 cups, then the even lines through 14. At empty, 8 cups, and 14 cups, also save Rotated right, Rotated left, and Face on. The cup line is only where you stop pouring. The file name does not store ounces or a percent. The clear-water training set is `train/2026-10-10-clear-water/`. First file is `square_empty.jpg`. The test split is a new walk of the same 18 stops, saved in `train/2026-10-10-clear-water-test/` by `check/capture_test.py`. Upload that folder as the test split. Do not put those files in the training set. The level is the box ratio after the pictures are labeled.
+Pour on Squared tank: empty, 1 cup, 2 cups, then the even lines through 14. At empty, 8 cups, and 14 cups, also save Rotated right, Rotated left, and Face on. The cup line is only where you stop pouring. The file name does not store ounces or a percent. The morning clear-water set, with the window glare, is `train/2026-10-10-clear-water/`. The afternoon recapture with the sun off the tank is `train/2026-10-10-clear-water-afternoon/`. First file is `square_empty.jpg`. Upload the afternoon folder as the training set. The test split is a new walk of the same 18 stops, saved in `train/2026-10-10-clear-water-test/` by `check/capture_test.py`. Upload that folder as the test split. Do not put those files in the training set. The level is the box ratio after the pictures are labeled.
 
-Retake the last picture deletes that file and shows the same stop again. Save does not skip a filename that is already in train/. Replace clears that current file. A reload does not take another picture. If the process restarts, it continues at the first missing file. `train/2026-10-10-clear-water/` is what you label. Leave `train/2026-10-09-first-try/` out of the upload. These files are already flipped. The accuracy number uses fresh fills after training, not these files.
+Retake the last picture deletes that file and shows the same stop again. Save does not skip a filename that is already in train/. Replace clears that current file. A reload does not take another picture. If the process restarts, it continues at the first missing file. `train/2026-10-10-clear-water-afternoon/` is what you label. Leave `train/2026-10-09-first-try/` and the morning glare folder out of this upload. These files are already flipped. The accuracy number uses fresh fills after training, not these files.
 
 Do not save `/frame.jpg` from `check/preview.py`. After the first Nano pass that URL can include boxes. Person notes later point the hook back at `check/preview.py`.
 
 ## 3. Label and train
 
-New Roboflow project, Object Detection. Upload `train/2026-10-10-clear-water/` only.
+New Roboflow project, Object Detection. Upload `train/2026-10-10-clear-water-afternoon/` only.
 
 - `liquid` — from the bottom of the reservoir up to the bright band. The top edge sits on that band.
 - `reservoir` — the tank outline.
