@@ -184,7 +184,8 @@ html,body{margin:0;height:100%}
 body{background:#111;color:#fff;font:22px sans-serif;display:flex;flex-direction:column;height:100vh;height:100dvh}
 #bar{padding:12px 16px;flex:0 0 auto}
 #count{font:700 48px sans-serif;margin:0 0 8px}
-button{font:28px sans-serif;padding:18px 22px;margin:0 8px 8px 0;touch-action:manipulation}
+button{font:22px sans-serif;padding:14px 18px;margin:0 8px 8px 0;touch-action:manipulation}
+#save,#send{display:block;width:100%;font:28px sans-serif;padding:18px;margin:0 0 10px}
 #stage{position:relative;flex:1 1 auto;min-height:50vh;background:#000}
 #view{width:100%;height:100%;object-fit:contain;background:#000;display:block}
 #stale{position:absolute;left:12px;top:12px;margin:0;background:#a30;color:#fff;font:700 28px sans-serif;padding:8px 12px}
