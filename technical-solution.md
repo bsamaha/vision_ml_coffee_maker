@@ -43,19 +43,26 @@ v4l2-ctl -d /dev/video0 -c focus_automatic_continuous=0
 v4l2-ctl -d /dev/video0 -c auto_exposure=1
 ```
 
-Read the settled `focus_absolute` and a usable `exposure_time_absolute` from `--list-ctrls` before turning the automatic modes off, and write those numbers into the set commands. Then confirm the preview is still a bright, sharp picture of the reservoir.
+Read the settled `focus_absolute` and a usable `exposure_time_absolute` from `--list-ctrls` before turning the automatic modes off. Write those two numbers to `/home/bs/tank-envs/camera.conf`.
+
+```
+focus_absolute=<settled value>
+exposure_time_absolute=<settled value>
+```
+
+`check/capture.py` applies `power_line_frequency=2`, manual focus, that focus value, `auto_exposure=1`, then `exposure_time_absolute`, every time it opens the camera. Manual exposure without the absolute value blacks the frame. Confirm the page is still a bright, sharp picture of the reservoir before you leave it running.
 
 ## 2. Capture
 
-`train/` is what you label. These files are already flipped. Photograph below 25% so the alarm has something to see. The accuracy number uses fresh fills after training, not these files.
+Open http://raspberrypi.local:8080. That page is `check/capture.py`. It shows the clean camera and does not draw boxes.
 
-Weigh the water. One gram is one milliliter. Note the weight next to the filename.
+If `camera.conf` is missing, the picture still moves and the page says the camera is not locked. The countdown starts the first time you open the page after that file exists. It does not pause between cups. Open it when the reservoir is empty and you can stay for the whole ladder.
 
-- Settled water, nobody in frame. From empty to the 14-cup line, steps of about 6–8 fl oz, including several steps under 25% and several above it. A few stills at each step after the surface settles.
-- At two of those levels, shoot again with the room light changed.
-- A few during a Classic draw, a few during the opening pause, and a few after the brew has been stopped with water still in the tank.
+The first line waits 60 seconds, then writes `train/0cup_0.0oz_0.0pct.jpg`. Each later line waits 45 seconds and tells you to add 1 cup from a measuring cup, from 1 cup through 14. Stand where the camera cannot see you before the count reaches zero. Cups 0, 1, 2, and 3 are under 25% full, so those lines say alarm. The shoot ends at 14 cups. That is 15 files, one per cup.
 
-Aim for about 80–100 stills. The preview has to be stopped for a direct grab. If it stays up, save `http://127.0.0.1:8080/frame.jpg` instead. That JPEG is already flipped and is the same picture the model sees.
+A reload stays on the current cup. If the process restarts, it continues at the first missing file. `train/` is what you label. These files are already flipped. The accuracy number uses fresh fills after training, not these files.
+
+Do not save `/frame.jpg` from `check/preview.py`. After the first Nano pass that URL can include boxes. Person notes later point the hook back at `check/preview.py`.
 
 ## 3. Label and train
 
@@ -64,7 +71,7 @@ New Roboflow project, Object Detection. Upload `train/` only.
 - `liquid` — from the bottom of the reservoir up to the bright band. The top edge sits on that band.
 - `reservoir` — the tank outline.
 
-No person class. Brightness, exposure, blur, and a little noise are on. Flip, rotation, crop, and shear stay off. The frames are already upright.
+No person class. The first version uses no augmentations, so the result is these pictures. A later version can add brightness, exposure, blur, and a little noise. Flip, rotation, crop, and shear stay off. The frames are already upright. Draw the boxes tight. The top of the liquid box is the level. The empty frame gets a reservoir box and no liquid box.
 
 Train RF-DETR Nano for the tank. Keep the COCO Nano for person.
 

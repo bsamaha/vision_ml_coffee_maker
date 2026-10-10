@@ -6,7 +6,7 @@ You edit this directory on the PC. The Pi runs the commit you push.
 
 1. Commit the change.
 2. From this directory, run `git push pi main`.
-3. Wait until that command returns. The Pi restarts the preview, and the command returns after port 8080 is open.
+3. Wait until that command returns. The Pi restarts the capture page, and the command returns after port 8080 is open.
 4. Open http://raspberrypi.local:8080.
 
 If the install fails, the push fails and the preview that was already running stays up. If the new preview fails to listen, read `/tmp/preview.log` on the Pi.
@@ -22,7 +22,7 @@ The Pi installs that lock into a slot under `/home/bs/tank-envs/slots/`. An unch
 
 ## What the Pi updates
 
-`scripts/pi-receive` is the hook. A push checks that commit out into `/home/bs/tank`, installs the lock when the lock changed, and starts `check/preview.py` with that slot's Python.
+`scripts/pi-receive` is the hook. A push checks that commit out into `/home/bs/tank`, installs the lock when the lock changed, and starts `check/capture.py` with that slot's Python. `check/preview.py` is the boxed person page. The hook does not start it during this shoot.
 
 uv on the Pi is `/home/bs/.local/bin/uv`. Git does not track the slot or the weights. The weights are `/home/bs/.roboflow/models/`.
 
