@@ -89,11 +89,12 @@ frame_seq = 0
 frame_lock = threading.Lock()
 script_lock = threading.Lock()
 locking = threading.Event()
+busy = threading.Lock()
 index = 0
 note = ""
 
 
-def read_lock():
+def conf_vals():
     try:
         text = CONF.read_text()
     except OSError:
@@ -105,10 +106,29 @@ def read_lock():
             continue
         key, value = line.split("=", 1)
         vals[key.strip()] = value.strip()
+    return vals
+
+
+def read_lock():
+    vals = conf_vals()
+    if not vals:
+        return None
     try:
         return int(vals["focus_absolute"]), int(vals["exposure_time_absolute"])
     except (KeyError, ValueError):
         return None
+
+
+def lock_accepted():
+    vals = conf_vals()
+    return bool(vals) and vals.get("accepted") == "1"
+
+
+def begin():
+    if busy.acquire(blocking=False):
+        return True
+    set_note("Wait for the current step to finish.")
+    return False
 
 
 def conf_text():
@@ -193,20 +213,25 @@ def match_exposure(target):
         set_ctrl("exposure_time_absolute", guess)
         level = sample_brightness()
         if level is None:
-            return best
+            break
         err = abs(level - target)
         set_note(f"Trying exposure {guess}. Brightness {level:.0f}, target {target:.0f}.")
         if err < best_err:
             best, best_err = guess, err
         if err <= 12:
-            return guess
+            break
         if level < target:
             low = guess + 1
         else:
             high = guess - 1
-    if best is not None:
-        set_ctrl("auto_exposure", 1)
-        set_ctrl("exposure_time_absolute", best)
+    if best is None or best_err > 12:
+        return None
+    set_ctrl("auto_exposure", 1)
+    set_ctrl("exposure_time_absolute", best)
+    checked = sample_brightness()
+    if checked is None or abs(checked - target) > 20:
+        set_note("That exposure did not stay as bright as the automatic picture.")
+        return None
     return best
 
 
@@ -216,6 +241,8 @@ def release_controls():
 
 
 def lock_current():
+    if not begin():
+        return False
     locking.set()
     try:
         focus = read_ctrl("focus_absolute")
@@ -239,10 +266,39 @@ def lock_current():
             return False
         CONF.parent.mkdir(parents=True, exist_ok=True)
         CONF.write_text(f"focus_absolute={focus}\nexposure_time_absolute={exposure}\n")
-        set_note(f"Locked. Focus {focus}, exposure {exposure}.")
+        set_note(f"Locked. Focus {focus}, exposure {exposure}. Look again before you keep it.")
         return True
     finally:
         locking.clear()
+        busy.release()
+
+
+def accept_lock():
+    if not begin():
+        return
+    try:
+        pair = read_lock()
+        if pair is None:
+            set_note("There is no lock to keep.")
+            return
+        focus, exposure = pair
+        CONF.write_text(f"focus_absolute={focus}\nexposure_time_absolute={exposure}\naccepted=1\n")
+        set_note("Lock kept.")
+    finally:
+        busy.release()
+
+
+def retry_lock():
+    if not begin():
+        return
+    locking.set()
+    try:
+        CONF.unlink(missing_ok=True)
+        release_controls()
+        set_note("Lock cleared. Look again, then press Lock this picture.")
+    finally:
+        locking.clear()
+        busy.release()
 
 
 def apply_controls(focus, exposure):
@@ -318,54 +374,101 @@ def capture():
 
 def save_current():
     global index
-    if read_lock() is None:
-        set_note("Save picture wrote nothing. The camera is not locked.")
+    if not begin():
         return
-    with frame_lock:
-        jpg = bytes(latest)
-    if not jpg:
-        set_note("Save picture wrote nothing. The camera has no frame yet.")
-        return
-    message = ""
-    with script_lock:
-        i = index
-        if i >= len(STEPS):
-            message = "The shoot is already done."
-        else:
-            path = TRAIN / STEPS[i].filename
-            if not path.is_file():
-                TRAIN.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(jpg)
-                message = f"Saved {path.name}"
+    try:
+        if not lock_accepted():
+            set_note("Keep the lock before saving a picture.")
+            return
+        with frame_lock:
+            jpg = bytes(latest)
+        if not jpg:
+            set_note("Save picture wrote nothing. The camera has no frame yet.")
+            return
+        message = ""
+        with script_lock:
+            i = index
+            if i >= len(STEPS):
+                message = "The shoot is already done."
             else:
-                message = f"{path.name} was already there."
-            index = i + 1
-    set_note(message)
+                path = TRAIN / STEPS[i].filename
+                if not path.is_file():
+                    TRAIN.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(jpg)
+                    message = f"Saved {path.name}"
+                else:
+                    message = f"{path.name} was already there."
+                index = i + 1
+        set_note(message)
+    finally:
+        busy.release()
+
+
+def retake_last():
+    global index
+    if not begin():
+        return
+    try:
+        if not lock_accepted():
+            set_note("Keep the lock before retaking a picture.")
+            return
+        message = ""
+        with script_lock:
+            if index <= 0:
+                message = "There is no picture to retake."
+            else:
+                index -= 1
+                path = TRAIN / STEPS[index].filename
+                if path.is_file():
+                    path.unlink()
+                message = f"Removed {path.name}. Take that picture again."
+        set_note(message)
+    finally:
+        busy.release()
 
 
 def status():
-    locked = read_lock() is not None
+    pair = read_lock()
+    accepted = lock_accepted()
     with script_lock:
         i = index
         shown = note
     done = i >= len(STEPS)
-    if not locked:
+    if pair is None:
+        phase = "lock"
         instruction = (
-            "Look at the picture. When the reservoir is sharp and bright, press Lock this picture."
+            "Empty the reservoir. Seat the carafe. Turn the machine off. "
+            "Stand where the camera cannot see you. When the reservoir looks sharp and bright, "
+            "press Lock this picture."
         )
+        count = "Step 1. Lock the camera."
+    elif not accepted:
+        phase = "confirm"
+        instruction = (
+            "Look at the reservoir again. It should still be sharp and bright. "
+            "Keep this lock, or try again."
+        )
+        count = f"Step 2. Check the picture. Focus {pair[0]}, exposure {pair[1]}."
     elif done:
-        instruction = "The shoot is done."
+        phase = "done"
+        instruction = "The shoot is done. The pictures are in train/."
+        count = f"{len(STEPS)} of {len(STEPS)} pictures."
     else:
+        phase = "pour"
         instruction = STEPS[i].instruction
+        count = f"Picture {i + 1} of {len(STEPS)}."
     files = sum(1 for step in STEPS if (TRAIN / step.filename).is_file())
-    pair = read_lock()
     return {
-        "locked": locked,
+        "phase": phase,
+        "locked": pair is not None,
+        "accepted": accepted,
         "instruction": instruction,
         "focus": None if pair is None else pair[0],
         "exposure": None if pair is None else pair[1],
         "files": files,
         "done": done,
+        "canRetake": phase == "pour" and i > 0,
+        "count": count,
         "total": len(STEPS),
         "note": shown,
     }
@@ -383,11 +486,14 @@ button{font:22px sans-serif;padding:14px 18px}
 img{width:100vw;flex:1 1 auto;min-height:0;object-fit:contain;background:#000;display:block}
 </style>
 <div id=bar>
-<p id=line></p>
 <p id=count></p>
+<p id=line></p>
 <p id=note></p>
 <button id=lock type=button>Lock this picture</button>
-<button id=save type=button>Save picture</button>
+<button id=keep type=button>Keep this lock</button>
+<button id=retry type=button>Try again</button>
+<button id=save type=button>Save this picture</button>
+<button id=retake type=button>Retake the last picture</button>
 </div>
 <img id=view alt="camera">
 <script>
@@ -396,29 +502,42 @@ function frame(){ view.src = "/frame.jpg?t=" + Date.now(); }
 view.onload = () => setTimeout(frame, 200);
 view.onerror = () => setTimeout(frame, 800);
 frame();
+let busy = false;
 function show(body){
   document.getElementById("line").textContent = body.instruction;
-  const locked = body.locked ? "Locked. Focus " + body.focus + ", exposure " + body.exposure + ". " : "";
-  document.getElementById("count").textContent = locked + body.files + " of " + body.total + " pictures";
+  document.getElementById("count").textContent = body.count;
   document.getElementById("note").textContent = body.note || "";
-  document.getElementById("save").disabled = !body.locked || body.done;
+  document.getElementById("lock").hidden = body.phase !== "lock";
+  document.getElementById("keep").hidden = body.phase !== "confirm";
+  document.getElementById("retry").hidden = body.phase !== "confirm";
+  document.getElementById("save").hidden = body.phase !== "pour";
+  document.getElementById("retake").hidden = !body.canRetake;
+  if (!busy) {
+    document.getElementById("lock").disabled = false;
+    document.getElementById("keep").disabled = false;
+    document.getElementById("retry").disabled = false;
+    document.getElementById("save").disabled = false;
+    document.getElementById("retake").disabled = false;
+  }
 }
 async function poll(){
   try { show(await fetch("/status.json", {cache:"no-store"}).then(r => r.json())); }
   catch (e) {}
 }
-document.getElementById("lock").onclick = async () => {
-  const button = document.getElementById("lock");
-  button.disabled = true;
-  document.getElementById("note").textContent = "Locking. Matching the bright picture.";
-  try { show(await fetch("/lock", {method:"POST", cache:"no-store"}).then(r => r.json())); }
-  catch (e) { document.getElementById("note").textContent = "Lock did not finish."; }
-  button.disabled = false;
-};
-document.getElementById("save").onclick = async () => {
-  try { show(await fetch("/save", {method:"POST", cache:"no-store"}).then(r => r.json())); }
-  catch (e) { document.getElementById("note").textContent = "Save did not finish."; }
-};
+async function press(id, path){
+  if (busy) return;
+  busy = true;
+  document.getElementById(id).disabled = true;
+  try { show(await fetch(path, {method:"POST", cache:"no-store"}).then(r => r.json())); }
+  catch (e) { document.getElementById("note").textContent = "That step did not finish."; }
+  busy = false;
+  poll();
+}
+document.getElementById("lock").onclick = () => press("lock", "/lock");
+document.getElementById("keep").onclick = () => press("keep", "/accept");
+document.getElementById("retry").onclick = () => press("retry", "/retry");
+document.getElementById("save").onclick = () => press("save", "/save");
+document.getElementById("retake").onclick = () => press("retake", "/retake");
 setInterval(poll, 250);
 poll();
 </script>
@@ -483,8 +602,14 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/lock":
                 lock_current()
+            elif path == "/accept":
+                accept_lock()
+            elif path == "/retry":
+                retry_lock()
             elif path == "/save":
                 save_current()
+            elif path == "/retake":
+                retake_last()
             else:
                 self.send_error(404)
                 return

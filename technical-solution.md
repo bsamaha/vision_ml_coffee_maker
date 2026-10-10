@@ -36,22 +36,24 @@ The water line is the top of that bright band. Percent full is how high the line
 
 Do this once, before the stills you keep. The aim does not change after it.
 
-On the capture page, look at the live picture. When the reservoir is sharp and bright, press Lock this picture. The page reads `focus_absolute`, then tries manual exposures until the picture stays as bright as the automatic one. It writes the match to `/home/bs/tank-envs/camera.conf`. The control's idle reading is 166. Writing 166 makes the picture dark, so the page does not use that reading. The press takes a few seconds. The line under the buttons, and `/tmp/preview.log`, show each exposure it tries.
+The page walks one step at a time.
+
+1. Empty the reservoir, seat the carafe, and turn the machine off. Stand clear. When the reservoir looks sharp and bright, press Lock this picture. The page reads `focus_absolute`, then tries manual exposures until the picture stays as bright as the automatic one. The control's idle reading is 166. Writing 166 makes the picture dark, so the page does not use that reading. If the match is still dark, it leaves the camera on automatic and stays on this step.
+2. Look again. Press Keep this lock, or Try again. Try again deletes the lock and returns to step 1.
 
 ```
 focus_absolute=<settled value>
 exposure_time_absolute=<settled value>
+accepted=1
 ```
 
-`check/capture.py` applies `power_line_frequency=2`, manual focus, that focus value, `auto_exposure=1`, then the matched `exposure_time_absolute`, every time it opens the camera. The page shows the two numbers after the lock. Confirm the picture is still bright and sharp before you press Save picture. A press that fails is printed in `/tmp/preview.log` and on the page.
+`check/capture.py` applies `power_line_frequency=2`, manual focus, that focus value, `auto_exposure=1`, then the matched `exposure_time_absolute`, every time it opens the camera. A press that fails is printed in `/tmp/preview.log` and on the page.
 
 ## 2. Capture
 
 Open http://raspberrypi.local:8080. That page is `check/capture.py`. It shows the clean camera and does not draw boxes.
 
-If `camera.conf` is missing, the picture still moves and Save picture writes nothing. Open the page when the reservoir is empty.
-
-The page names the stop. You pour to that stop, stand where the camera cannot see you, and press Save picture. That press writes one file and the page names the next stop. The first file is `train/0cup_0.0oz_0.0pct.jpg`. Each later stop adds 1/2 cup, from 1/2 cup through 14 cups. Fills under 17.5 fl oz, which is under 25%, say alarm. Empty plus every half cup through 14 is 29 pictures. A reload does not take another picture.
+After the lock is kept, the page names one stop at a time. Stand where the camera cannot see you, then press Save this picture. That press writes one file and names the next stop. A second tap while the first press is still working does not write another file. The first file is `train/0cup_0.0oz_0.0pct.jpg`. Each later stop adds 1/2 cup, from 1/2 cup through 14 cups. Fills under 17.5 fl oz, which is under 25%, say alarm. Empty plus every half cup through 14 is 29 pictures. Retake the last picture deletes that file and shows the same stop again. A reload does not take another picture.
 
 A reload stays on the current cup. If the process restarts, it continues at the first missing file. `train/` is what you label. These files are already flipped. The accuracy number uses fresh fills after training, not these files.
 
