@@ -36,21 +36,14 @@ The water line is the top of that bright band. Percent full is how high the line
 
 Do this once, before the stills you keep. The aim does not change after it.
 
-```bash
-v4l2-ctl -d /dev/video0 --list-ctrls
-v4l2-ctl -d /dev/video0 -c power_line_frequency=2
-v4l2-ctl -d /dev/video0 -c focus_automatic_continuous=0
-v4l2-ctl -d /dev/video0 -c auto_exposure=1
-```
-
-Read the settled `focus_absolute` and a usable `exposure_time_absolute` from `--list-ctrls` before turning the automatic modes off. Write those two numbers to `/home/bs/tank-envs/camera.conf`.
+On the capture page, look at the live picture. When the reservoir is sharp and bright, press Lock this picture. The page reads `focus_absolute` and `exposure_time_absolute` and writes them to `/home/bs/tank-envs/camera.conf`.
 
 ```
 focus_absolute=<settled value>
 exposure_time_absolute=<settled value>
 ```
 
-`check/capture.py` applies `power_line_frequency=2`, manual focus, that focus value, `auto_exposure=1`, then `exposure_time_absolute`, every time it opens the camera. Manual exposure without the absolute value blacks the frame. Confirm the page is still a bright, sharp picture of the reservoir before you leave it running.
+`check/capture.py` applies `power_line_frequency=2`, manual focus, that focus value, `auto_exposure=1`, then `exposure_time_absolute`, every time it opens the camera. Manual exposure without the absolute value blacks the frame. The page shows the two numbers after the lock. Confirm the picture is still bright and sharp before you press Save picture.
 
 ## 2. Capture
 

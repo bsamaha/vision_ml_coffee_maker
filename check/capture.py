@@ -113,6 +113,33 @@ def conf_text():
         return None
 
 
+def read_ctrl(name):
+    result = subprocess.run(
+        ["v4l2-ctl", "-d", "/dev/video0", "-C", name],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    line = result.stdout.strip()
+    if result.returncode != 0 or ":" not in line:
+        return None
+    try:
+        return int(line.split(":", 1)[1].strip())
+    except ValueError:
+        return None
+
+
+def lock_current():
+    focus = read_ctrl("focus_absolute")
+    exposure = read_ctrl("exposure_time_absolute")
+    if focus is None or exposure is None:
+        return False
+    CONF.parent.mkdir(parents=True, exist_ok=True)
+    CONF.write_text(f"focus_absolute={focus}\nexposure_time_absolute={exposure}\n")
+    apply_controls(focus, exposure)
+    return True
+
+
 def apply_controls(focus, exposure):
     # Manual exposure without the absolute value blacks the frame, so the absolute is last.
     pairs = (
@@ -199,16 +226,19 @@ def status():
     done = i >= len(STEPS)
     if not locked:
         instruction = (
-            "The camera is not locked. Pressing Save picture writes nothing until the lock file is in place."
+            "Look at the picture. When the reservoir is sharp and bright, press Lock this picture."
         )
     elif done:
         instruction = "The shoot is done."
     else:
         instruction = STEPS[i].instruction
     files = sum(1 for step in STEPS if (TRAIN / step.filename).is_file())
+    pair = read_lock()
     return {
         "locked": locked,
         "instruction": instruction,
+        "focus": None if pair is None else pair[0],
+        "exposure": None if pair is None else pair[1],
         "files": files,
         "done": done,
         "total": len(STEPS),
@@ -229,19 +259,25 @@ img{width:100vw;flex:1 1 auto;min-height:0;object-fit:contain;background:#000;di
 <div id=bar>
 <p id=line></p>
 <p id=count></p>
+<button id=lock type=button>Lock this picture</button>
 <button id=save type=button>Save picture</button>
 </div>
 <img src="/stream.mjpg" alt="camera">
 <script>
 function show(body){
   document.getElementById("line").textContent = body.instruction;
-  document.getElementById("count").textContent = body.files + " of " + body.total + " pictures";
+  const locked = body.locked ? "Locked. Focus " + body.focus + ", exposure " + body.exposure + ". " : "";
+  document.getElementById("count").textContent = locked + body.files + " of " + body.total + " pictures";
   document.getElementById("save").disabled = !body.locked || body.done;
 }
 async function poll(){
   try { show(await fetch("/status.json", {cache:"no-store"}).then(r => r.json())); }
   catch (e) {}
 }
+document.getElementById("lock").onclick = async () => {
+  try { show(await fetch("/lock", {method:"POST", cache:"no-store"}).then(r => r.json())); }
+  catch (e) {}
+};
 document.getElementById("save").onclick = async () => {
   try { show(await fetch("/save", {method:"POST", cache:"no-store"}).then(r => r.json())); }
   catch (e) {}
@@ -307,10 +343,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
-        if path != "/save":
+        if path == "/lock":
+            lock_current()
+        elif path == "/save":
+            save_current()
+        else:
             self.send_error(404)
             return
-        save_current()
         body = json.dumps(status()).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
