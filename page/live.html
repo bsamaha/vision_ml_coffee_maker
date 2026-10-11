@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coffee tank</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23000'/%3E%3C/svg%3E">
+<style>
+html, body { margin: 0; height: 100%; background: #0a0a0a; color: #f2f2f2; color-scheme: dark; }
+body {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  font: 14px/1.25 system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+#board {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 280px;
+  grid-template-rows: 44px minmax(0, 1fr) auto;
+  background: #0a0a0a;
+}
+#top {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid #2a2a2a;
+}
+#board.alarm #top { border-top: 3px solid #e23b3b; }
+#when { margin: 0; font-size: 14px; font-weight: 700; }
+.live-mark {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #b7ffcf;
+}
+#board.review .live-mark { color: #ffd36a; }
+#level, #status {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+#level { grid-column: 1; grid-row: 2; border-right: 1px solid #2a2a2a; }
+#status {
+  grid-column: 3;
+  grid-row: 2;
+  border-left: 1px solid #2a2a2a;
+  display: flex;
+  flex-direction: column;
+}
+.log-block { flex: 1; min-height: 0; overflow: auto; border-bottom: 0; }
+#scene {
+  grid-column: 2;
+  grid-row: 2;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  background: #050505;
+  min-height: 0;
+  padding: 16px 20px;
+}
+#hero {
+  position: relative;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  display: block;
+}
+.k {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #9a9a9a;
+}
+.band {
+  margin: 2px 0 0;
+  font-weight: 700;
+  font-size: 72px;
+  line-height: .9;
+  letter-spacing: -0.04em;
+}
+.band.low { color: #ff6d6d; }
+.oz { margin: 6px 0 0; font-size: 22px; font-weight: 700; }
+.model { margin: 4px 0 0; font-size: 13px; font-weight: 700; color: #9a9a9a; }
+.rows { margin: 18px 0 0; }
+.rows div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-top: 1px solid #242424;
+}
+.rows dt, .rows dd { margin: 0; }
+.rows dt {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #9a9a9a;
+}
+.rows dd { font-size: 16px; font-weight: 700; }
+.block { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid #242424; }
+.block:last-child { margin: 0; padding: 0; border: 0; }
+#status .big { margin: 2px 0 0; font-size: 40px; font-weight: 700; line-height: 1; }
+#status .sub { margin: 4px 0 0; font-size: 15px; font-weight: 700; color: #ddd; }
+#person-line { margin: 2px 0 0; font-size: 40px; font-weight: 700; line-height: 1; }
+#person-line.yes { color: #8dffb0; }
+.log-block { flex: 1; min-height: 0; overflow: auto; border-bottom: 0; }
+#events {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+#events li {
+  padding: 6px 0;
+  border-top: 1px solid #242424;
+  font-size: 13px;
+  font-weight: 600;
+}
+#events time {
+  display: block;
+  margin-bottom: 2px;
+  color: #9a9a9a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+#board.alarm #alarm-block {
+  background: #6e1212;
+  margin: -16px -16px 14px;
+  padding: 16px 16px 14px;
+  border-bottom: 0;
+}
+.flag {
+  position: absolute;
+  z-index: 2;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  margin: 0;
+  padding: 8px 10px;
+  font-weight: 700;
+  font-size: 14px;
+}
+#unverified { background: #3a2f10; color: #ffd36a; }
+#stale-banner { background: #a30; color: #fff; }
+#review { background: #3a2f10; color: #ffd36a; }
+#dock {
+  grid-column: 1 / -1;
+  padding: 8px 12px 10px;
+  border-top: 1px solid #2a2a2a;
+  background: #0a0a0a;
+}
+.meta { margin: 0; }
+.prior {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 8px;
+}
+.prior div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid #242424;
+}
+.prior span, .ticks span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #8d8d8d;
+}
+.prior b, .ticks b { font-size: 13px; font-weight: 700; }
+.ticks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ticks li { min-width: 72px; }
+.ticks span { display: block; }
+#strip { display: flex; gap: 8px; margin-top: 8px; }
+#strip button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 4px 6px;
+  border: 1px solid #333;
+  background: #000;
+  color: #fff;
+  cursor: pointer;
+}
+#strip button[aria-pressed="true"] { border: 2px solid #fff; padding: 3px 3px 5px; }
+#strip svg { display: block; width: 100%; height: 56px; }
+#strip .cap {
+  display: block;
+  padding-top: 4px;
+  text-align: center;
+  font: 700 10px/1 system-ui, sans-serif;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+#preview {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: #111;
+  border-top: 1px solid #2a2a2a;
+  overflow-x: auto;
+}
+#preview h2 {
+  margin: 0 6px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #8d8d8d;
+  white-space: nowrap;
+}
+#preview button {
+  flex: 0 0 auto;
+  border: 1px solid #3a3a3a;
+  background: #161616;
+  color: #eee;
+  font: 12px/1 system-ui, sans-serif;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+#preview button[aria-pressed="true"] { background: #f2f2f2; color: #111; border-color: #f2f2f2; }
+@media (max-width: 860px) {
+  body { height: auto; }
+  #board {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 46vh auto auto;
+  }
+  #level, #status { border: 0; border-bottom: 1px solid #2a2a2a; }
+  #status { grid-column: 1; grid-row: 3; }
+  #scene { grid-column: 1; grid-row: 4; }
+  #level { grid-row: 2; }
+}
+</style>
+</head>
+<body>
+<main id="board">
+  <header id="top">
+    <p id="when"><time datetime="2026-10-12T12:00:15-05:00">Monday 12 October 2026 · 12:00:15 PM</time></p>
+    <p class="live-mark" id="live-mark">Live</p>
+  </header>
+
+  <section id="level" aria-label="Level">
+    <p class="k">Level</p>
+    <p class="band" id="band-name">3/4</p>
+    <p class="oz" id="ounces">40.0 fl oz</p>
+    <p class="model" id="model-line" hidden>Model 47.3 fl oz</p>
+    <dl class="rows">
+      <div><dt>15 min out</dt><dd id="out-15">0</dd></div>
+      <div><dt>Today out</dt><dd id="out-today">0</dd></div>
+      <div><dt>Seen today</dt><dd id="seen-today">0</dd></div>
+      <div><dt>Refills</dt><dd id="refill-today">0</dd></div>
+      <div><dt>Volume</dt><dd id="volume-today">0 fl oz</dd></div>
+      <div><dt>Coffee today</dt><dd id="bill-today">$0.00</dd></div>
+      <div><dt id="logged-days">Month · 1 day</dt><dd id="monthly">$0.00</dd></div>
+    </dl>
+  </section>
+
+  <div id="scene">
+    <svg id="hero" viewBox="0 0 360 720" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Latest frame, 40.0 fluid ounces">
+      <rect width="360" height="720" fill="#000"/>
+      <rect x="18" y="12" width="324" height="696" fill="#101010" stroke="#6a6a6a" stroke-width="2"/>
+      <rect id="water" x="20" y="360" width="320" height="346" fill="#4a3424"/>
+      <line id="surface" x1="20" x2="340" y1="360" y2="360" stroke="#f3eadf" stroke-width="4"/>
+      <text id="noline" x="180" y="370" text-anchor="middle" fill="#f4f4f4" font-size="28" font-family="system-ui, sans-serif" font-weight="700" visibility="hidden">No level</text>
+    </svg>
+    <p id="unverified" class="flag" hidden>Unverified rise. Bill unchanged.</p>
+    <p id="stale-banner" class="flag" hidden>Stale. 4 ticks with no level.</p>
+    <p id="review" class="flag" hidden>Earlier frame. The numbers stay live.</p>
+  </div>
+
+  <section id="status" aria-label="Alarm and activity">
+    <div class="block" id="alarm-block">
+      <p class="k">Alarm</p>
+      <p class="big" id="alarm-value">Off</p>
+      <p class="sub" id="alarm-age">for 0:15</p>
+    </div>
+    <div class="block">
+      <p class="k">Activity</p>
+      <p class="big" id="activity-value">Idle</p>
+      <p class="sub" id="activity-detail">level still 0:15</p>
+    </div>
+    <div class="block">
+      <p class="k">Person right now</p>
+      <p id="person-line">No</p>
+    </div>
+    <div class="block log-block">
+      <p class="k">Events</p>
+      <ol id="events"></ol>
+    </div>
+  </section>
+
+  <footer id="dock">
+    <div class="prior" id="prior">
+      <div><span>Sun 11</span><b>no rows</b></div>
+      <div><span>Sat 10</span><b>no rows</b></div>
+      <div><span>Fri 9</span><b>no rows</b></div>
+    </div>
+    <ul class="ticks" id="ticks">
+      <li><span>Capture</span><b>120 ms</b></li>
+      <li><span>Tank</span><b>4400 ms</b></li>
+      <li><span>Person</span><b>4400 ms</b></li>
+      <li><span>Gauge</span><b>3 ms</b></li>
+      <li><span>Ledger</span><b>12 ms</b></li>
+      <li><span>Total</span><b>8935 ms</b></li>
+      <li><span>RSS</span><b>640 MB</b></li>
+      <li><span>Temp</span><b>54.2°C</b></li>
+      <li><span>Over 15 s</span><b>0</b></li>
+    </ul>
+    <div id="strip" role="listbox" aria-label="Last 8 frames. The last one is the most recent."></div>
+  </footer>
+</main>
+
+<footer id="preview">
+  <h2>Preview, not on the Pi</h2>
+  <div role="group" aria-label="Preview, not on the Pi">
+    <button type="button" data-state="open" aria-pressed="true">Open</button>
+    <button type="button" data-state="person" aria-pressed="false">Person in frame</button>
+    <button type="button" data-state="out" aria-pressed="false">Stepped out</button>
+    <button type="button" data-state="brew" aria-pressed="false">Brewing</button>
+    <button type="button" data-state="alarm" aria-pressed="false">Alarm</button>
+    <button type="button" data-state="pour" aria-pressed="false">Take and return</button>
+    <button type="button" data-state="unverified" aria-pressed="false">Unverified rise</button>
+    <button type="button" data-state="stale" aria-pressed="false">Stale</button>
+  </div>
+</footer>
+
+<script>
+"use strict";
+
+const TOP = 14;
+const HEIGHT = 692;
+const LABELS = ["-1:45", "-1:30", "-1:15", "-1:00", "-0:45", "-0:30", "-0:15", "Now"];
+
+function row(today) {
+  return [today, "no rows", "no rows", "no rows"];
+}
+
+const STATES = {
+  open: {
+    iso: "2026-10-12T12:00:15-05:00",
+    when: "Monday 12 October 2026 · 12:00:15 PM",
+    band: "3/4", oz: 40, water: true,
+    alarm: false, alarmAge: "for 0:15",
+    activity: "Idle", activityDetail: "level still 0:15",
+    person: false,
+    seen: row("0"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Month · 1 day",
+    out15: "0", outToday: "0",
+    unverified: false, stale: false,
+    shots: [40, 40, 40, 40, 40, 40, 40, 40],
+    events: []
+  },
+  person: {
+    iso: "2026-10-12T12:01:30-05:00",
+    when: "Monday 12 October 2026 · 12:01:30 PM",
+    band: "3/4", oz: 40, water: true,
+    alarm: false, alarmAge: "for 1:30",
+    activity: "Idle", activityDetail: "level still 1:30",
+    person: true,
+    seen: row("1"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Month · 1 day",
+    out15: "0", outToday: "0",
+    unverified: false, stale: false,
+    shots: [40, 40, 40, 40, 40, 40, 40, 40],
+    events: [
+      ["12:01:00 PM", "Person seen. Reservoir stayed."]
+    ]
+  },
+  out: {
+    iso: "2026-10-12T12:02:30-05:00",
+    when: "Monday 12 October 2026 · 12:02:30 PM",
+    band: "3/4", oz: 40, water: true,
+    alarm: false, alarmAge: "for 2:30",
+    activity: "Idle", activityDetail: "level still 2:30",
+    person: false,
+    seen: row("1"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Month · 1 day",
+    out15: "0", outToday: "0",
+    unverified: false, stale: false,
+    shots: [40, 40, 40, 40, 40, 40, 40, 40],
+    events: [
+      ["12:01:00 PM", "Person seen. Reservoir stayed."]
+    ]
+  },
+  brew: {
+    iso: "2026-10-12T12:08:00-05:00",
+    when: "Monday 12 October 2026 · 12:08:00 PM",
+    band: "1/2", oz: 30, water: true,
+    alarm: false, alarmAge: "for 8:00",
+    activity: "Brewing", activityDetail: "drop running 2:00",
+    person: false,
+    seen: row("1"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Month · 1 day",
+    out15: "10", outToday: "10",
+    unverified: false, stale: false,
+    shots: [40, 40, 40, 38, 36, 34, 32, 30],
+    events: [
+      ["12:06:00 PM", "Brewing. Level falling from 40 fl oz."],
+      ["12:01:00 PM", "Person seen. Reservoir stayed."]
+    ]
+  },
+  alarm: {
+    iso: "2026-10-12T12:12:00-05:00",
+    when: "Monday 12 October 2026 · 12:12:00 PM",
+    band: "Low", oz: 16, water: true,
+    alarm: true, alarmAge: "for 0:15",
+    activity: "Brewing", activityDetail: "drop running 6:00",
+    person: false,
+    seen: row("1"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Month · 1 day",
+    out15: "24", outToday: "24",
+    unverified: false, stale: false,
+    shots: [30, 28, 26, 24, 22, 20, 18, 16],
+    events: [
+      ["12:11:45 PM", "Alarm on. Level 16 fl oz. Still brewing."],
+      ["12:06:00 PM", "Brewing. Level falling from 40 fl oz."]
+    ]
+  },
+  pour: {
+    iso: "2026-10-12T12:18:00-05:00",
+    when: "Monday 12 October 2026 · 12:18:00 PM",
+    band: "Full", oz: 70, frameOz: 47.3, water: true,
+    alarm: false, alarmAge: "for 0:15",
+    activity: "Idle", activityDetail: "level still 0:15",
+    person: false,
+    seen: row("2"), refills: row("1"), volume: row("54 fl oz"), bill: row("$5.40"),
+    monthly: "$162.00", logged: "Month · 1 day",
+    out15: "24", outToday: "24",
+    unverified: false, stale: false,
+    shots: [16, 16, 16, 16, 16, null, null, 47.3],
+    events: [
+      ["12:18:00 PM", "Fill. Booked 70 fl oz. Model said 47.3. Coffee today $5.40."],
+      ["12:18:00 PM", "Alarm off. Level 70 fl oz."],
+      ["12:16:00 PM", "Reservoir taken. Saved 16 fl oz."],
+      ["12:15:30 PM", "Person seen."],
+      ["12:11:45 PM", "Alarm on. Level 16 fl oz. Still brewing."]
+    ]
+  },
+  unverified: {
+    iso: "2026-10-12T12:14:00-05:00",
+    when: "Monday 12 October 2026 · 12:14:00 PM",
+    band: "Full", oz: 60, water: true,
+    alarm: false, alarmAge: "for 0:15",
+    activity: "Idle", activityDetail: "level still 0:15",
+    person: false,
+    seen: row("1"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Month · 1 day",
+    out15: "24", outToday: "24",
+    unverified: true, stale: false,
+    shots: [16, 16, 16, 60, 60.4, 59.6, 60, 60],
+    events: [
+      ["12:14:00 PM", "Level 60 fl oz. No person. Bill stayed $0.00."],
+      ["12:14:00 PM", "Alarm off. Level 60 fl oz."],
+      ["12:11:45 PM", "Alarm on. Level 16 fl oz. Still brewing."]
+    ]
+  },
+  stale: {
+    iso: "2026-10-12T12:09:00-05:00",
+    when: "Monday 12 October 2026 · 12:09:00 PM",
+    band: "1/2", oz: 34, water: false,
+    alarm: false, alarmAge: "for 9:00",
+    activity: "Brewing", activityDetail: "drop running 2:00",
+    person: false,
+    seen: row("1"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Month · 1 day",
+    out15: "6", outToday: "6",
+    unverified: false, stale: true,
+    shots: [40, 38, 36, 34, null, null, null, null],
+    events: [
+      ["12:06:00 PM", "Brewing. Level falling from 40 fl oz."]
+    ]
+  }
+};
+
+let current = STATES.open;
+let picked = 7;
+
+function shotVisible(oz, index) {
+  if (oz == null) return false;
+  if (index === current.shots.length - 1) return current.water;
+  return true;
+}
+
+function paint(oz, show, water, surface) {
+  if (!show) {
+    water.setAttribute("height", "0");
+    surface.setAttribute("visibility", "hidden");
+    return;
+  }
+  const h = HEIGHT * (oz / 70);
+  const y = TOP + HEIGHT - h;
+  water.setAttribute("y", y.toFixed(1));
+  water.setAttribute("height", h.toFixed(1));
+  surface.setAttribute("y1", y.toFixed(1));
+  surface.setAttribute("y2", y.toFixed(1));
+  surface.setAttribute("visibility", "visible");
+}
+
+function paintHero(oz, show) {
+  paint(oz, show, document.getElementById("water"), document.getElementById("surface"));
+  document.getElementById("noline").setAttribute("visibility", show ? "hidden" : "visible");
+  const hero = document.getElementById("hero");
+  hero.setAttribute(
+    "aria-label",
+    show
+      ? "Frame at " + oz.toFixed(1) + " fluid ounces"
+      : "Frame with no level. Last booked " + current.oz.toFixed(1) + " fluid ounces"
+  );
+}
+
+function thumbSvg(oz, show) {
+  const top = 4;
+  const h = 44;
+  const x = 8;
+  const w = 76;
+  let body = "";
+  if (show) {
+    const wh = h * (oz / 70);
+    const y = top + h - wh;
+    body = '<rect x="' + x + '" y="' + y.toFixed(1) + '" width="' + w + '" height="' + wh.toFixed(1) + '" fill="#4a3424"/>' +
+      '<line x1="' + x + '" x2="' + (x + w) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '" stroke="#f3eadf" stroke-width="1.5"/>';
+  } else {
+    body = '<text x="46" y="30" text-anchor="middle" fill="#fff" font-size="9" font-family="system-ui,sans-serif" font-weight="700">No level</text>';
+  }
+  return '<svg viewBox="0 0 92 52" aria-hidden="true"><rect width="92" height="52" fill="#070707"/>' +
+    '<rect x="6" y="2" width="80" height="48" fill="#141414" stroke="#5c5c5c"/>' + body + "</svg>";
+}
+
+function renderStrip() {
+  const strip = document.getElementById("strip");
+  strip.replaceChildren();
+  current.shots.forEach(function (oz, index) {
+    const last = index === current.shots.length - 1;
+    const show = shotVisible(oz, index);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-pressed", index === picked ? "true" : "false");
+    const label = oz == null ? "no level" : oz.toFixed(1) + " fluid ounces";
+    button.setAttribute(
+      "aria-label",
+      (last ? "Most recent frame, " : "Earlier frame, ") + label
+    );
+    button.innerHTML = thumbSvg(oz, show) + '<span class="cap">' + (last ? "Now" : LABELS[index]) + "</span>";
+    button.addEventListener("click", function () {
+      pick(index);
+    });
+    strip.appendChild(button);
+  });
+}
+
+function pick(index) {
+  picked = index;
+  const last = index === current.shots.length - 1;
+  const show = shotVisible(current.shots[index], index);
+  paintHero(current.shots[index], show);
+  document.getElementById("review").hidden = last;
+  document.getElementById("board").classList.toggle("review", !last);
+  document.getElementById("live-mark").textContent = last ? "Live" : "Earlier frame";
+  document.querySelectorAll("#strip button").forEach(function (button, i) {
+    button.setAttribute("aria-pressed", i === index ? "true" : "false");
+  });
+}
+
+function show(key) {
+  current = STATES[key];
+  picked = current.shots.length - 1;
+  const when = document.querySelector("#when time");
+  when.setAttribute("datetime", current.iso);
+  when.textContent = current.when;
+
+  const bandName = document.getElementById("band-name");
+  bandName.textContent = current.band;
+  bandName.classList.toggle("low", current.band === "Low");
+  document.getElementById("ounces").textContent = current.oz.toFixed(1) + " fl oz";
+  const frame = current.frameOz != null ? current.frameOz : current.oz;
+  const model = document.getElementById("model-line");
+  if (frame !== current.oz) {
+    model.hidden = false;
+    model.textContent = "Model " + frame.toFixed(1) + " fl oz";
+  } else {
+    model.hidden = true;
+  }
+
+  document.getElementById("board").classList.toggle("alarm", current.alarm);
+  document.getElementById("alarm-value").textContent = current.alarm ? "On" : "Off";
+  document.getElementById("alarm-age").textContent = current.alarmAge;
+  document.getElementById("activity-value").textContent = current.activity;
+  document.getElementById("activity-detail").textContent = current.activityDetail;
+
+  const person = document.getElementById("person-line");
+  person.textContent = current.person ? "Yes" : "No";
+  person.classList.toggle("yes", current.person);
+
+  document.getElementById("unverified").hidden = !current.unverified;
+  document.getElementById("stale-banner").hidden = !current.stale;
+  document.getElementById("out-15").textContent = current.out15;
+  document.getElementById("out-today").textContent = current.outToday;
+  document.getElementById("seen-today").textContent = current.seen[0];
+  document.getElementById("refill-today").textContent = current.refills[0];
+  document.getElementById("volume-today").textContent = current.volume[0];
+  document.getElementById("bill-today").textContent = current.bill[0];
+  document.getElementById("monthly").textContent = current.monthly;
+  document.getElementById("logged-days").textContent = current.logged;
+  const events = document.getElementById("events");
+  events.replaceChildren();
+  current.events.forEach(function (item) {
+    const li = document.createElement("li");
+    const time = document.createElement("time");
+    time.textContent = item[0];
+    li.appendChild(time);
+    li.appendChild(document.createTextNode(item[1]));
+    events.appendChild(li);
+  });
+
+  renderStrip();
+  pick(picked);
+
+  document.querySelectorAll("#preview button").forEach(function (button) {
+    button.setAttribute("aria-pressed", button.dataset.state === key ? "true" : "false");
+  });
+}
+
+document.getElementById("preview").addEventListener("click", function (event) {
+  const button = event.target.closest("button");
+  if (!button || !button.dataset.state) return;
+  show(button.dataset.state);
+});
+
+show("open");
+</script>
+</body>
+</html>

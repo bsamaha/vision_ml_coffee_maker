@@ -54,27 +54,27 @@ A camera is the better choice for three reasons:
 Every few minutes, the site computer takes a frame and runs a small Roboflow model on it, such as RF-DETR Nano. The model does two jobs:
 
 - **Tank level.** The model finds each tank and the liquid line inside it. The level is the line's height as a fraction of the tank's height, and each tank's strapping table (its chart of height to gallons) converts that to gallons. This depends on seeing the liquid. Many chemical tanks are translucent poly, where the liquid line shows through the wall. Opaque tanks need a sight gauge the camera can see.
-- **People.** The model detects any person in the frame. A person present while the level rises is what marks a fill event, and the frames from that window are saved as evidence. The model logs that someone was there, not who they are. The saved photo shows who it was.
+- **People.** The model detects any person in the frame. It logs that someone was there, not who they are. A person with the tank still in the picture is a visit, and that visit does not bill. On this proof a fill is the reservoir taken out of the frame and brought back at least 3.5 fl oz higher. The page books 70 fl oz. The bill is 70 minus the ounces saved when it left. On a pad the tank stays put. The ticket is checked against the gallons delivered while a person was there. A half-fill from the 25% line on the 335-gallon tank is about $2,760 at about $22 a gallon. That dollar stays off the kitchen screen. The screen shows the coffee bill.
 
 The same frames show whether the pumpjack is moving, by comparing consecutive frames. Spills can be added later as another class, trained on images from the deployed cameras.
 
 ### What it records
 
-The camera keeps a continuous log of what it sees. Each entry is a time, the level in each tank, and whether a person is present. For example:
+The camera keeps a continuous log. Each entry is a time, the booked level, and whether a person is present.
 
-| Time | Person present | Tank level |
+On this proof a fill looks like this:
+
+| Moment | What the frame shows | Booked level |
 |---|---|---|
-| X | No | 50 gallons |
-| X + 1 | Yes | 100 gallons |
-| X + 2 | No | 150 gallons |
+| Taken | The reservoir has been missing for two ticks, and a person was on one of them | Ounces saved when it left |
+| Return | The reservoir is back, a liquid line is present, no person is in the picture, and the line is at least 3.5 fl oz higher | 70 fl oz |
 
-Everything else is calculated from this log:
+The model reading is stored beside the 70. The coffee bill uses 70 minus the saved ounces, at $0.50 a cup (5 fl oz). From the alarm, about 16 fl oz, that bill is about $5.40.
 
-- **Fill events.** A person appeared at X + 1, and the level rose 100 gallons between X and X + 2. So a refill of about 100 gallons happened then, and the matching invoice should be about 100 × $22. The photos from that window are kept as evidence.
-- **Consumption rate.** The steady drop between fills gives each tank's daily and weekly consumption. This comes from the well's own history, so it adjusts as production changes.
-- **Anomalies.** Consumption well below the baseline, and especially zero, means the treatment has stopped. A low level means a refill is due. A drop faster than the baseline, or a rise with no person present, points to a leak, overdosing, or theft.
+- **Ounces out.** The page sums the booked ounces that fell. It shows ounces out in the last 15 minutes and ounces out today. A rise, including the jump to 70, adds 0. There is no weekly rate.
+- **Anomalies.** A day with little or no drop means the treatment may have stopped. A low level means a refill is due. A rise while nobody took the tank updates the level after the quiet-jump hold, and it does not bill.
 
-The photos and the log belong to Company X. The model runs on the site computer, so only the log and the fill photos are sent over the network.
+The photos and the log belong to Company X. The model runs on the site computer. On this proof the newest 8 frames stay on the Pi. The well product would send the log and the fill photos.
 
 ### How long a well can go untreated
 
@@ -200,16 +200,17 @@ These add value, but they can't be measured before the cameras go up, so they're
 
 ## The proof of concept
 
-The lab setup is the Ninja reservoir, not a small copy of the well. A brew empties that reservoir. On a pad the pump does not. The screen shows the level, the consumption rate, person visits, refills, a coffee bill, and a refill alarm.
+The lab setup is the Ninja reservoir, not a small copy of the well. A brew empties that reservoir. On a pad the pump does not. The screen shows the booked level, ounces out in the last 15 minutes, ounces out today, person visits, refills, a coffee bill, and a refill alarm.
 
-The kitchen reports a measured error. It does not have a pass line. The error is the average absolute difference, in percent of full, on weighed fills at or above 25%. Under 25% full (17.5 fl oz on this 70 fl oz reservoir) is the refill alarm. A rate of 0 is normal and is not an alarm. The 3% field target above is the well, and it is not the kitchen gate.
+The kitchen reports a measured error. It does not have a pass line. The error is the average absolute difference, in percent of full, on weighed fills at or above 25%. Under 25% full (17.5 fl oz on this 70 fl oz reservoir) is the refill alarm. Both ounce totals at 0 are normal and are not the alarm. The 3% field target above is the well, and it is not the kitchen gate.
 
 The demo shows:
 
 - **The measured error** on fills at or above 25% full.
-- **A person visit** with no pour, logged on its own.
-- **A refill**, which is a person visit plus a rise in level, with volume and a coffee bill at $0.50 a cup (5 fl oz).
-- **The refill alarm** once a brew drops the reservoir through 25%.
+- **A person visit** with the reservoir still in the picture, logged on its own. That visit does not bill.
+- **A refill.** The reservoir leaves and comes back at least 3.5 fl oz higher. The page books 70 fl oz. The bill is 70 minus the ounces saved when it left, at $0.50 a cup. The model reading stays beside the 70.
+- **The refill alarm** once a brew drops the reservoir under 17.5 fl oz.
+- **The photos** stay on the Pi. The page shows the newest 8 frames.
 
 A clear reservoir indoors will read more cleanly than a tank outdoors. Outdoor accuracy, summer heat, and uptime on solar still have to be confirmed on real tanks.
 

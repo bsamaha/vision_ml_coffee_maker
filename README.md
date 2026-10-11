@@ -9,7 +9,7 @@ You edit this directory on the PC. The Pi runs the commit you push.
 3. Wait until that command returns. The Pi restarts the capture page, and the command returns after port 8080 is open.
 4. Open http://raspberrypi.local:8080.
 
-If the install fails, the push fails and the preview that was already running stays up. If the new preview fails to listen, read `/tmp/preview.log` on the Pi.
+If the install fails, the push fails and the process that was already running stays up. If the new process fails to listen, read `/tmp/preview.log` on the Pi.
 
 ## Change a dependency
 
@@ -22,7 +22,7 @@ The Pi installs that lock into a slot under `/home/bs/tank-envs/slots/`. An unch
 
 ## What the Pi updates
 
-`scripts/pi-receive` is the hook. A push checks that commit out into `/home/bs/tank`, installs the lock when the lock changed, and starts `check/capture_rapid.py` with that slot's Python. That page writes extra training stills with one button. `check/capture.py` is the afternoon 18-stop page. `check/capture_test.py` is the test-split page. `check/preview.py` is the boxed person page. The hook does not start preview during this shoot.
+`scripts/pi-receive` is the hook. A push checks that commit out into `/home/bs/tank`, installs the lock when the lock changed, and starts `check/capture_rapid.py` with that slot's Python. That page writes extra training stills with one button. `check/capture.py` is the afternoon 18-stop page. `check/capture_test.py` is the test-split page. `check/preview.py` is the boxed person page. The hook does not start preview during this shoot. The live page in section 6 of `technical-solution.md` is the next program. This hook does not start it yet.
 
 uv on the Pi is `/home/bs/.local/bin/uv`. Git does not track the slot or the weights. The weights are `/home/bs/.roboflow/models/`.
 
