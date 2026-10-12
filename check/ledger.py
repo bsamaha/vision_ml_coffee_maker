@@ -35,9 +35,9 @@ _BREW_QUIET = timedelta(seconds=60)
 # Under one cup. An empty tank flickers between no line and about 3 fl oz.
 # A seated 0 locks that booking at 0. The flicker does not raise it.
 _CUP = 50
-# Model wobble on a still tank. A rise this small does not lift the outflow floor,
-# so the same ounces are not counted out twice.
-_NOISE = 10
+# Model wobble. A rise this small does not lift the outflow floor, so the same ounces are not
+# counted out twice. Mid-brew the line rose up to 1.4 fl oz for a tick in the 11 October rehearsal.
+_NOISE = 20
 _WINDOW = timedelta(minutes=15)
 
 

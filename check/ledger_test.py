@@ -1156,16 +1156,16 @@ class LedgerTests(unittest.TestCase):
         _folder, _path, db = self.db()
         self.row(db, "12:00", 40, False, booked=400, m15=0, today=0, alarm=False, activity="idle")
         self.row(db, "12:01", 38, False, booked=380, m15=20, today=20, alarm=False, activity="idle")
-        self.row(db, "12:02", 40, False, booked=400, m15=20, today=20, alarm=False, activity="idle")
-        self.row(db, "12:03", 37, False, booked=370, m15=50, today=50, alarm=False, activity="idle")
+        self.row(db, "12:02", 40.5, False, booked=405, m15=20, today=20, alarm=False, activity="idle")
+        self.row(db, "12:03", 37, False, booked=370, m15=55, today=55, alarm=False, activity="idle")
         self.row(
             db,
             "12:04",
             None,
             True,
             booked=370,
-            m15=50,
-            today=50,
+            m15=55,
+            today=55,
             alarm=False,
             activity="idle",
             seen=1,
@@ -1177,8 +1177,8 @@ class LedgerTests(unittest.TestCase):
             None,
             False,
             booked=370,
-            m15=50,
-            today=50,
+            m15=55,
+            today=55,
             alarm=False,
             activity="out",
             taken=370,
@@ -1190,8 +1190,8 @@ class LedgerTests(unittest.TestCase):
             47.3,
             False,
             booked=700,
-            m15=50,
-            today=50,
+            m15=55,
+            today=55,
             alarm=False,
             activity="idle",
             filled=330,
@@ -1207,8 +1207,8 @@ class LedgerTests(unittest.TestCase):
                 ),
             ),
         )
-        self.row(db, "12:16", 47.3, False, booked=700, m15=50, today=50, alarm=False, activity="idle")
-        self.row(db, "12:17", 47.3, False, booked=700, m15=30, today=50, alarm=False, activity="idle")
+        self.row(db, "12:16", 47.3, False, booked=700, m15=55, today=55, alarm=False, activity="idle")
+        self.row(db, "12:17", 47.3, False, booked=700, m15=35, today=55, alarm=False, activity="idle")
 
     def test_midnight_resets_today_and_keeps_the_fifteen_minute_window(self):
         _folder, _path, db = self.db()
@@ -1417,6 +1417,13 @@ class LedgerTests(unittest.TestCase):
         kinds = [row["kind"] for row in db.execute("SELECT kind FROM event ORDER BY id")]
         self.assertEqual(kinds.count("brewing"), 1)
         self.assertNotIn("idle", kinds)
+
+    def test_a_mid_brew_uptick_is_not_counted_twice(self):
+        _folder, _path, db = self.db()
+        # 23:20:20 to 23:21:05 in the rehearsal: the line rose 1.4 fl oz for a tick.
+        machine = self.ticks(db, "12:00", (47.2, 47.5, 46.1, 47.5, 46.0, 45.1), every=7.5)
+        self.assertEqual(tenths(machine.booked_oz), 451)
+        self.assertEqual(tenths(machine.out_today), 21)
 
     def test_a_brew_ends_after_a_minute_without_a_fall(self):
         _folder, _path, db = self.db()
