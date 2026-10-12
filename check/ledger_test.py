@@ -157,6 +157,14 @@ class LedgerTests(unittest.TestCase):
             "reading",
         )
 
+    def test_connect_drops_the_indexes_nothing_reads(self):
+        _folder, path, db = self.db()
+        db.execute("CREATE INDEX reading_ts ON reading (ts)")
+        db.execute("CREATE INDEX event_id_desc ON event (id DESC)")
+        again = self.reconnect(path)
+        names = {row[0] for row in again.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+        self.assertEqual(names, {"reading_day"})
+
     def test_total_ms_adds_the_fold_time(self):
         _folder, _path, db = self.db()
         ledger.tick(db, ledger.Tick(at("12:00"), 40, False, 3, 4, 5, 6, 12, 21.5))

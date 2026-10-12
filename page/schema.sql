@@ -11,6 +11,8 @@ PRAGMA foreign_keys = ON;
 -- gauge_oz is 0 when the reservoir is present and no liquid line is found.
 -- booked_oz is what we kept, from 0 to 70. On a fill it is 70 even when gauge_oz is lower.
 -- Later seated ticks scale gauge_oz onto 0..70 from the fill's gauge. A still gauge leaves 70 in place.
+-- ts is when the camera took the photo. capture_ms is how old that photo was when the tick took it.
+-- rss_mb is the board process's resident memory. temp_c is the Pi's CPU temperature.
 CREATE TABLE reading (
   id INTEGER PRIMARY KEY,
   ts TEXT NOT NULL,
@@ -28,7 +30,6 @@ CREATE TABLE reading (
   temp_c REAL
 );
 
-CREATE INDEX reading_ts ON reading (ts);
 CREATE INDEX reading_day ON reading (day);
 
 -- One row when an appearance starts, the reservoir comes back, activity changes, or the alarm changes.
@@ -46,8 +47,6 @@ CREATE TABLE event (
   ounces REAL,
   delta_oz REAL
 );
-
-CREATE INDEX event_id_desc ON event (id DESC);
 
 -- The page reads this row. The ledger replaces it every tick.
 -- activity is idle, brewing, or out.

@@ -132,6 +132,9 @@ def connect(path: str | Path) -> sqlite3.Connection:
     ).fetchone()
     if present is None:
         db.executescript(_SCHEMA.read_text(encoding="utf-8"))
+    # Files made before schema.sql dropped these. Nothing reads them, and each costs a page a tick.
+    db.execute("DROP INDEX IF EXISTS reading_ts")
+    db.execute("DROP INDEX IF EXISTS event_id_desc")
     return db
 
 

@@ -108,6 +108,50 @@ class BoardTests(unittest.TestCase):
             {("Reservoir", 0.9): True, ("liquid-level", 0.8): True, ("Reservoir", 0.5): False, ("chair", 0.7): False},
         )
 
+    def test_the_board_thins_ffmpeg_ahead_of_the_flip(self):
+        command = ["ffmpeg", "-i", "/dev/video0", "-vf", "hflip,vflip", "-f", "mjpeg", "pipe:1"]
+        self.assertEqual(
+            board.thinned(command, 2),
+            ["ffmpeg", "-i", "/dev/video0", "-vf", "fps=2,hflip,vflip", "-f", "mjpeg", "pipe:1"],
+        )
+        self.assertEqual(command[4], "hflip,vflip")
+
+    def test_memory_and_temperature_come_from_proc_and_sys(self):
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        folder = Path(held.name)
+        status = folder / "status"
+        status.write_text("Name:\tpython\nVmRSS:\t  812032 kB\nThreads:\t9\n", encoding="utf-8")
+        zone = folder / "temp"
+        zone.write_text("78880\n", encoding="utf-8")
+        self.assertEqual(board.rss_mb(status), 793)
+        self.assertEqual(board.temp_c(zone), 78.9)
+        self.assertIsNone(board.rss_mb(folder / "missing"))
+        self.assertIsNone(board.temp_c(folder / "missing"))
+        zone.write_text("warm\n", encoding="utf-8")
+        self.assertIsNone(board.temp_c(zone))
+
+    def test_the_reading_keeps_memory_temperature_and_frame_age(self):
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        folder = Path(held.name)
+        db = ledger.connect(folder / "tank.sqlite")
+        try:
+            board.tick(
+                db,
+                folder / "frames",
+                shot(),
+                four_cups(),
+                datetime(2026, 10, 12, 12, 0, tzinfo=CHICAGO),
+                board.Elapsed(capture_ms=180, tank_ms=3700, person_ms=3690),
+                memory_mb=793,
+                cpu_c=78.9,
+            )
+            row = db.execute("SELECT ts, capture_ms, rss_mb, temp_c FROM reading").fetchone()
+        finally:
+            db.close()
+        self.assertEqual(tuple(row), ("2026-10-12T12:00:00-05:00", 180, 793, 78.9))
+
     def test_empty_jpeg_writes_nothing(self):
         held = tempfile.TemporaryDirectory()
         self.addCleanup(held.cleanup)

@@ -12,7 +12,7 @@ import threading
 import time
 import traceback
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
@@ -23,17 +23,46 @@ import ledger
 import loop
 import sight
 
-__all__ = ["tick", "main", "Elapsed"]
+__all__ = ["tick", "main", "Elapsed", "thinned", "rss_mb", "temp_c"]
 
 CHICAGO = ZoneInfo("America/Chicago")
-# ffmpeg sends 15 frames a second. This long with no new one means the camera stopped.
+# The webcam only offers 1280x720 MJPEG at 60 fps, whatever -framerate asks for.
+# A tick takes one frame every ~7 s, so ffmpeg flips and encodes only this many a second.
+BOARD_FPS = 2
+# This long with no new frame means the camera stopped.
 CAMERA_QUIET_S = 10
 
 
 class Elapsed(NamedTuple):
+    # How old the frame was when the tick took it.
     capture_ms: int
     tank_ms: int
     person_ms: int
+
+
+def thinned(command: Sequence[str], fps: int) -> list[str]:
+    """The capture ffmpeg command with an fps filter ahead of the flip."""
+    out = list(command)
+    at = out.index("-vf")
+    out[at + 1] = f"fps={fps}," + out[at + 1]
+    return out
+
+
+def rss_mb(status: Path = Path("/proc/self/status")) -> int | None:
+    try:
+        for line in status.read_text(encoding="utf-8").splitlines():
+            if line.startswith("VmRSS:"):
+                return round(int(line.split()[1]) / 1024)
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def temp_c(zone: Path = Path("/sys/class/thermal/thermal_zone0/temp")) -> float | None:
+    try:
+        return round(int(zone.read_text(encoding="utf-8").strip()) / 1000, 1)
+    except (OSError, ValueError):
+        return None
 
 
 def detections(
@@ -69,6 +98,8 @@ def tick(
     at: datetime,
     elapsed: Elapsed = Elapsed(0, 0, 0),
     size: tuple[int, int] = (1280, 720),
+    memory_mb: int | None = None,
+    cpu_c: float | None = None,
 ) -> ledger.Applied:
     started = time.perf_counter()
     seen = sight.seen(boxes)
@@ -81,8 +112,8 @@ def tick(
         tank_ms=elapsed.tank_ms,
         person_ms=elapsed.person_ms,
         gauge_ms=gauge_ms,
-        rss_mb=None,
-        temp_c=None,
+        rss_mb=memory_mb,
+        temp_c=cpu_c,
     )
     return loop.record(db, frames, jpeg, one, detections(boxes, seen, size))
 
@@ -99,6 +130,7 @@ def main() -> None:
         jpeg: bytes
         capture_ms: int
         seq: int
+        taken: datetime
 
     class Passes(NamedTuple):
         boxes: tuple[sight.Box, ...]
@@ -138,13 +170,13 @@ def main() -> None:
 
     def copy_jpeg() -> Grab | None:
         with capture.frame_lock:
-            started = time.perf_counter()
             jpg = bytes(capture.latest)
             seq = capture.frame_seq
-            capture_ms = round((time.perf_counter() - started) * 1000)
+            age_s = max(0.0, time.monotonic() - capture.frame_at)
         if not jpg:
             return None
-        return Grab(jpg, capture_ms, seq)
+        taken = datetime.now(CHICAGO) - timedelta(seconds=age_s)
+        return Grab(jpg, round(age_s * 1000), seq, taken)
 
     def detect(models: Models, jpeg: bytes) -> Passes:
         import accuracy
@@ -231,6 +263,7 @@ def main() -> None:
     serving = live.serve(db_path, frames, 8080)
     db = None
     try:
+        capture.FFMPEG = thinned(capture.FFMPEG, BOARD_FPS)
         threading.Thread(target=capture.capture, daemon=True).start()
         try:
             models = load()
@@ -260,13 +293,15 @@ def main() -> None:
                     frames,
                     grab.jpeg,
                     passes.boxes,
-                    datetime.now(CHICAGO),
+                    grab.taken,
                     Elapsed(
                         capture_ms=grab.capture_ms,
                         tank_ms=passes.tank_ms,
                         person_ms=passes.person_ms,
                     ),
                     passes.size,
+                    rss_mb(),
+                    temp_c(),
                 )
             except Exception as error:
                 traceback.print_exc()

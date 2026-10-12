@@ -708,7 +708,7 @@ def _temp(tenths: int) -> str:
 
 
 def _timing_rows(timings: _Timings | None) -> tuple[tuple[str, str], ...]:
-    """Capture, Tank, Person, Gauge, Ledger, Total, RSS, Temp, then Over 15 s."""
+    """Frame age, Tank, Person, Gauge, Ledger, Total, RSS, Temp, then Over 15 s."""
     if timings is None:
         values = ("", "", "", "", "", "", "", "")
     else:
@@ -723,7 +723,7 @@ def _timing_rows(timings: _Timings | None) -> tuple[tuple[str, str], ...]:
             "" if timings.temp_tenths is None else _temp(timings.temp_tenths),
         )
     # Over 15 s is the literal 0. It is not total_ms and it is not a count of old rows.
-    labels = ("Capture", "Tank", "Person", "Gauge", "Ledger", "Total", "RSS", "Temp", "Over 15 s")
+    labels = ("Frame age", "Tank", "Person", "Gauge", "Ledger", "Total", "RSS", "Temp", "Over 15 s")
     return tuple(zip(labels, (*values, "0")))
 
 
