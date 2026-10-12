@@ -43,6 +43,17 @@ The same command with an older commit is the rollback.
 
 `workflow/tank-gauge.json` (what the Pi runs) and `workflow/tank-gauge-alert.json` (the same plus a refill email, for the Roboflow app only) are generated. After changing `check/tank_gauge.py`, `check/volume.py`, or `check/workflow.py`, run `python check/workflow.py --export workflow/tank-gauge.json` and `python check/workflow.py --export-alert workflow/tank-gauge-alert.json`, commit both, and paste them into the Roboflow Workflow editor so the app matches. A test fails if either committed file falls behind.
 
+## Call the cloud Workflow
+
+The alert Workflow is saved in Roboflow as `custom-workflow` in `blake-samaha-s-workspace`, and runs on Roboflow's hosted API. `scripts/cloud-alert.sh` sends it one picture:
+
+```sh
+scripts/cloud-alert.sh you@example.com                           # workflow/samples/empty.jpg: sends the refill email
+scripts/cloud-alert.sh you@example.com workflow/samples/full.jpg  # a full tank: sends nothing
+```
+
+It reads `ROBOFLOW_API_KEY` from the environment or from `.env`, posts the image as base64, and prints the HTTP status, the gauge, the person flag, and whether the email went out. `ALERT_EMAIL`, `ROBOFLOW_WORKSPACE`, and `ROBOFLOW_WORKFLOW` override the defaults. Every run spends Roboflow credits, and a picture under 17.5 fl oz sends one email.
+
 ## What stays out of git
 
 The slot, `train/` stills, `learn/`, the kitchen photos, the Workflow's model cache in `/home/bs/.inference/cache`, and the Roboflow API key. On the Pi the key is in `/home/bs/tank-envs/roboflow.env`; on the Mac it is in `.env`, which `.gitignore` excludes. One process owns `/dev/video0`, so do not start anything else that opens the camera while the board is up.

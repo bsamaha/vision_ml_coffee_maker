@@ -203,7 +203,14 @@ The refill email, in the Roboflow app only:
 2. Bounding Box Visualization: the tank model's boxes drawn on the frame.
 3. Email Notification, `roboflow_core/email_notification@v2`, Roboflow-managed: subject "Refill due: coffee tank", the level to one decimal and whether a person is in view, with the annotated photo attached as `tank.jpg`. The recipient is the `alert_email` input, typed in the editor's test panel, so no address is stored in the definition.
 
-`python check/workflow.py --export-alert workflow/tank-gauge-alert.json` writes it from the same code, so its TankGauge block matches the Pi's. Run locally on 12 October with the email disabled, the branch reached the email on the empty frame (0.0 fl oz) and the partly visible one (13.4), and skipped it on the full frame (70.0) and on a frame with no reservoir. To demo it, upload `workflow/samples/empty.jpg` (rehearsal frame 303: an empty tank, nobody in view) in the editor's test panel. One upload sends one email. `workflow/samples/full.jpg` (frame 316, a full tank) sends nothing.
+`python check/workflow.py --export-alert workflow/tank-gauge-alert.json` writes it from the same code, so its TankGauge block matches the Pi's. Run locally on 12 October with the email disabled, the branch reached the email on the empty frame (0.0 fl oz) and the partly visible one (13.4), and skipped it on the full frame (70.0) and on a frame with no reservoir. It is saved in Roboflow as `custom-workflow` in `blake-samaha-s-workspace`. To demo it, upload `workflow/samples/empty.jpg` (rehearsal frame 303: an empty tank, nobody in view) in the editor's test panel, or call the hosted API from the Mac:
+
+```sh
+scripts/cloud-alert.sh you@example.com                           # empty tank: sends the refill email
+scripts/cloud-alert.sh you@example.com workflow/samples/full.jpg  # full tank: sends nothing
+```
+
+The script reads `ROBOFLOW_API_KEY` from `.env` and prints the gauge, the person flag, and the email status. One run on the empty frame sends one email; on 12 October it returned "Notification sent successfully via Roboflow proxy". The full frame returned 70.0 fl oz and sent nothing.
 
 What it measured, 12 October:
 
