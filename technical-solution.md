@@ -8,7 +8,7 @@ This is a proof on the Ninja, not a small copy of the well. A brew here empties 
 
 The camera stays where it is. It looks at the graduated face from a little above the reservoir, with the whole machine in the frame. On 9 October 2026 a fill of about 75% showed as a bright horizontal band. The cup marks above that band were readable. Do not zoom. This webcam has no zoom, and a crop missed the tank.
 
-The camera body is upside down. There is no flip control on the device. Every still and the live page use `hflip,vflip`. The process on port 8080 right now is `check/capture_rapid.py`, started by `scripts/pi-receive`. It owns `/dev/video0`. Open [http://192.168.1.248:8080](http://192.168.1.248:8080). The live page in section 6 is not running, and the hook does not start it yet. `check/preview.py` is the boxed person page. Do not start it while capture is up.
+The camera body is upside down. There is no flip control on the device. Every still and the live page use `hflip,vflip`. The process on port 8080 is `check/board.py`, started by `scripts/pi-receive`. It owns `/dev/video0`. Open [http://192.168.1.248:8080](http://192.168.1.248:8080). The earlier pages are in `archive/check/`. Do not start one of them while the board is up.
 
 The person model is the COCO RF-DETR Nano. One 1280×720 frame took about 4.4 seconds on 9 October 2026. The tank model is the fine-tuned RF-DETR Nano, with classes `Reservoir` and `liquid-level`. Ounces come from `check/volume.py`. The live page rules are in section 6.
 
@@ -17,7 +17,7 @@ Both ounce totals at 0 are normal. The refill alarm is under 17.5 fl oz. Accurac
 ## Traps
 
 - Training stills are 1280×720 MJPEG with the same `hflip,vflip` as the preview. Another size or an unflipped frame is a different picture from the one we checked.
-- Stop the process that owns `/dev/video0` before opening it from anything else. Right now that process is `check/capture_rapid.py`. Two opens fight over the camera.
+- Stop the process that owns `/dev/video0` before opening it from anything else. Right now that process is `check/board.py`. Two opens fight over the camera.
 - `power_line_frequency=2` is 60 Hz. Value 1 is 50 Hz.
 - Manual exposure is `auto_exposure=1`, then `exposure_time_absolute`. Switching to manual without the absolute value blacks the frame. `auto_exposure=3` is the current Aperture Priority mode. A bright morning clips that automatic picture. Lock then looks for a usable exposure instead of copying the white frame. Darker and Brighter on the capture page change the shutter and keep the same focus. Set that once, then leave it for the rest of the 24 stills.
 - Lock focus only after this aim is final: `focus_automatic_continuous=0`, then `focus_absolute` at the settled value. Set those again if a new capture process opens the camera. They do not always stick.
@@ -62,11 +62,11 @@ The shoot is 18 pictures. The carafe can be full or empty. Only the reservoir is
 - **Rotated left.** The other way: reservoir on the left, buttons on the right.
 - **Face on.** Buttons face the camera.
 
-Pour on Squared tank: empty, 1 cup, 2 cups, then the even lines through 14. At empty, 8 cups, and 14 cups, also save Rotated right, Rotated left, and Face on. The cup line is only where you stop pouring. The file name does not store ounces or a percent. The morning clear-water set, with the window glare, is `train/2026-10-10-clear-water/`. The afternoon recapture with the sun off the tank is `train/2026-10-10-clear-water-afternoon/`. First file is `square_empty.jpg`. Upload the afternoon folder as the training set. The test split is a new walk of the same 18 stops, saved in `train/2026-10-10-clear-water-test/` by `check/capture_test.py`. Upload that folder as the test split. Do not put those files in the training set. The level is the box ratio after the pictures are labeled.
+Pour on Squared tank: empty, 1 cup, 2 cups, then the even lines through 14. At empty, 8 cups, and 14 cups, also save Rotated right, Rotated left, and Face on. The cup line is only where you stop pouring. The file name does not store ounces or a percent. The morning clear-water set, with the window glare, is `train/2026-10-10-clear-water/`. The afternoon recapture with the sun off the tank is `train/2026-10-10-clear-water-afternoon/`. First file is `square_empty.jpg`. Upload the afternoon folder as the training set. The test split is a new walk of the same 18 stops, saved in `train/2026-10-10-clear-water-test/` by `archive/check/capture_test.py`. Upload that folder as the test split. Do not put those files in the training set. The level is the box ratio after the pictures are labeled.
 
 Retake the last picture deletes that file and shows the same stop again. Save does not skip a filename that is already in train/. Replace clears that current file. A reload does not take another picture. If the process restarts, it continues at the first missing file. `train/2026-10-10-clear-water-afternoon/` is what you label. Leave `train/2026-10-09-first-try/` and the morning glare folder out of this upload. These files are already flipped. The accuracy number uses fresh fills after training, not these files.
 
-Do not save `/frame.jpg` from `check/preview.py`. After the first Nano pass that URL can include boxes. The next program is section 6. The hook still starts `check/capture_rapid.py`.
+Do not save `/frame.jpg` from `archive/check/preview.py`. After the first Nano pass that URL can include boxes. The hook starts `check/board.py`. The live board has no `/frame.jpg`.
 
 ## 3. Label and train
 
@@ -138,7 +138,7 @@ Write down when the green box appeared, when it went away, and whether the pour 
 
 ## 6. Live page
 
-The next program. It is not running yet. One process owns the camera. `scripts/pi-receive` starts that process instead of `check/capture_rapid.py`.
+One process owns the camera. `scripts/pi-receive` starts `check/board.py`.
 
 Each tick, in order:
 

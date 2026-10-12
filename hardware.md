@@ -66,7 +66,7 @@ A test grab on 9 October 2026 wrote a real 1920×1080 JPEG:
 ffmpeg -f v4l2 -input_format mjpeg -video_size 1920x1080 -i /dev/video0 -frames:v 1 frame.jpg
 ```
 
-The webcam has no zoom and no picture-flip control. The body is mounted upside down. Training stills and the live page turn the picture upright with `hflip,vflip`. A second program cannot open `/dev/video0` while one process owns it. Right now that process is `check/capture_rapid.py`.
+The webcam has no zoom and no picture-flip control. The body is mounted upside down. Training stills and the live page turn the picture upright with `hflip,vflip`. A second program cannot open `/dev/video0` while one process owns it. Right now that process is `check/board.py`.
 
 Controls, read on 9 October 2026:
 
@@ -78,13 +78,13 @@ Controls, read on 9 October 2026:
 
 ## Preview and Nano
 
-`check/preview.py` is the boxed person page. The hook does not start it. `scripts/pi-receive` starts `check/capture_rapid.py` on port 8080. On this LAN that is [http://192.168.1.248:8080](http://192.168.1.248:8080). The live page in section 6 of [technical-solution.md](technical-solution.md) is the next program. The hook does not start it yet.
+`scripts/pi-receive` starts `check/board.py` on port 8080. On this LAN that is [http://192.168.1.248:8080](http://192.168.1.248:8080). The boxed person page is `archive/check/preview.py`. The hook does not start it.
 
 The interpreter is the slot uv builds from `uv.lock`, under `/home/bs/tank-envs/slots/`. uv is `/home/bs/.local/bin/uv`. The pins are CPU `torch` 2.14.1 and `rfdetr` 1.10.1. The person weights are `/home/bs/.roboflow/models/rf-detr-nano.pth` (349 MB), person class only. The tank weights are `/home/bs/.roboflow/models/rate-and-volume-of-coffee-1/weights.pth`, classes `Reservoir` and `liquid-level`. Both are RF-DETR Nano on CPU. The same `RFDETRNano(device="cpu")` and `predict` call as the desk supervisor. That project refuses to load without CUDA. This one does not.
 
 On 9 October 2026 a 1280×720 person pass took about 4.4 seconds after the weights were on disk. The first load, including the download, was about 3 minutes. A later load was about 15 seconds. With the kitchen empty the person model returned bowl, chair, dining table, and bottle. No person was in that shot.
 
-`check/nano_person.py` loads its own COCO Nano and reads `:8080/frame.jpg`. Roboflow Inference on port 9001 is not part of this build. The gauge is the workflow block to publish. The live path runs in process on port 8080.
+`archive/check/nano_person.py` loads its own COCO Nano and reads `:8080/frame.jpg`. The live board does not serve that path. Roboflow Inference on port 9001 is not part of this build. The gauge is the workflow block to publish. The live path runs in process on port 8080.
 
 # Coffee makers
 
