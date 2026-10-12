@@ -678,6 +678,8 @@ def _rate(rows: list[sqlite3.Row], tick_at: datetime) -> _Rate:
     if span < _RATE_MIN_SPAN:
         return _Rate(None, None)
     per_min = max(0.0, (first - last) / (span.total_seconds() / 60))
+    if last <= 0:
+        return _Rate(per_min, 0.0)
     empty = last / per_min if per_min >= _DRAINING else None
     return _Rate(per_min, empty)
 
@@ -689,6 +691,8 @@ def _rate_text(rate: _Rate) -> tuple[str, str]:
     per_min = f"{rate.oz_per_min:.1f} fl oz/min"
     if rate.empty_min is None:
         return per_min, "Not draining"
+    if rate.empty_min == 0:
+        return per_min, "Empty"
     minutes = round(rate.empty_min)
     if minutes < 1:
         return per_min, "Under a minute"

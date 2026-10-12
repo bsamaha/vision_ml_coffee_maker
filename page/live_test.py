@@ -458,6 +458,14 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(node(page, "use-rate"), "0.1 fl oz/min")
         self.assertEqual(node(page, "empty-in"), "Not draining")
 
+    def test_a_tank_that_just_ran_dry_says_empty(self):
+        folder = self.folder()
+        path, frames = self.database(folder)
+        self.fill(path, [("12:00", 6.0, False), ("12:01", 4.0, False), ("12:02", 0, False)])
+        page = self.page(path, frames)
+        self.assertEqual(node(page, "use-rate"), "3.0 fl oz/min")
+        self.assertEqual(node(page, "empty-in"), "Empty")
+
     def test_one_reading_has_no_rate_yet(self):
         folder = self.folder()
         path, frames = self.database(folder)
