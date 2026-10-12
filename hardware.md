@@ -112,7 +112,7 @@ Measured on 11 October with the board running:
 | Free memory | about 68% |
 | Restart to first reading | about 66 s, mostly loading both models |
 
-`archive/check/nano_person.py` loads its own COCO Nano and reads `:8080/frame.jpg`. The live board does not serve that path. Roboflow Inference on port 9001 is not part of this build. The gauge is the workflow block to publish. The live path runs in process on port 8080.
+`archive/check/nano_person.py` loads its own COCO Nano and reads `:8080/frame.jpg`. The live board does not serve that path. Roboflow Inference on port 9001 is not part of this build, and Docker is not installed. The gauge is the workflow block to publish. Section 8 of [technical-solution.md](technical-solution.md) has the Workflow design. The live path runs in process on port 8080.
 
 Every frame and box file from the 11 October rehearsal is in `/home/bs/rehearsal-2026-10-11/` (273 frames).
 

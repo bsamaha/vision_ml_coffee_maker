@@ -217,7 +217,33 @@ Stop the cycle and wait until the machine is off before the reservoir comes out.
 
 Waiting before pressing Brew after a refill is fine. A full tank sitting still stays at 70 and Idle, and the brew plays out the same whenever it starts.
 
-## 8. Rehearsal, 11 October 2026
+## 8. Roboflow Workflow, the next step
+
+Not built. The board runs both RF-DETR Nano models in process with `rfdetr`, and the Pi has no Docker or Inference server. The challenge asks for a Workflow with a custom block, deployed on Roboflow Inference. This is that design.
+
+The split: the Workflow does perception and the gauge for one image. The board keeps everything that needs memory across ticks, which a Workflow does not: the camera, the ledger rules in section 6, SQLite, and the page. On the well, the same Workflow would run on every site computer.
+
+The Workflow:
+
+1. Input: one upright 1280×720 frame.
+2. Object detection: the fine-tuned tank model, `rate-and-volume-of-coffee` version 1 (the weights the Pi downloaded are `~/.roboflow/models/rate-and-volume-of-coffee-1/`), confidence 0.4.
+3. Object detection: the COCO RF-DETR Nano, `rfdetr-nano`, filtered to `person`, confidence 0.4.
+4. Custom Python block, TankGauge: today's `check/sight.py` and the cup table from `check/volume.py`. It takes both detection sets and returns `gauge_oz` (null with no reservoir, 0 with no liquid line), `person`, and the boxes it used.
+5. Outputs: both detection sets and the TankGauge values.
+
+The board's `detect()` becomes one HTTP call per tick to `http://127.0.0.1:9001` with the frame, and the outputs feed the same ledger tick and the same box files, so the page does not change. The in-process path stays behind a setting as the fallback.
+
+To build it:
+
+1. In Roboflow, confirm the tank model is deployed, and note the workspace slug and a private API key. The key lives in a file on the Pi outside the repository.
+2. Paste the Workflow JSON, with the TankGauge code inline as a dynamic Python block, into the Workflow editor, save it, and test it on a saved rehearsal frame.
+3. On the Pi, install Docker, then start the Inference CPU server bound to `127.0.0.1:9001` with `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=true`. That default changed to off in June 2026. Custom Python runs with the server's permissions, so the server stays on localhost.
+4. Switch the board to the Workflow, run the 273 rehearsal frames through both paths, and check that the gauge readings match and the ledger replay gives the same timeline.
+5. Measure the model time, CPU, temperature, and memory on the Pi.
+
+Risks: Inference has no hardware acceleration on a Pi 4, and two RF-DETR Nano passes have to fit inside the 7.5 s tick. The container and two models may take 1.5 to 2.5 GB, offset by about 770 MB the board stops using when it no longer loads PyTorch. If the Pi is too slow, the same Workflow runs on Roboflow's hosted API, at the cost of an internet round trip and credits per tick. Estimated effort: three to four hours.
+
+## 9. Rehearsal, 11 October 2026
 
 A full refill and a Classic brew from empty, 23:12 to 23:34, with the camera at night under room lights. Every frame and its box file from that run are in `/home/bs/rehearsal-2026-10-11/` on the Pi.
 

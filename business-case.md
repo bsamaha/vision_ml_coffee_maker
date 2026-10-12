@@ -58,6 +58,8 @@ Every few minutes, the site computer takes a frame and runs a small Roboflow mod
 
 The same frames show whether the pumpjack is moving, by comparing consecutive frames. Spills can be added later as another class, trained on images from the deployed cameras.
 
+In the field the models and the gauge run as one Roboflow Workflow on Roboflow Inference on each site computer: the tank model, the person model, and a custom block that turns the boxes into gallons. The site computer keeps the log and the rules that need memory, such as what counts as a fill. This proof runs the same two models directly on its Pi. Packaging them as that Workflow is the next step, laid out in section 8 of [technical-solution.md](technical-solution.md).
+
 ### What it records
 
 The camera keeps a continuous log. Each entry is a time, the booked level, and whether a person is present.
