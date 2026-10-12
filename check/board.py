@@ -10,6 +10,7 @@ import sqlite3
 import sys
 import threading
 import time
+import traceback
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,8 @@ import sight
 __all__ = ["tick", "main", "Elapsed"]
 
 CHICAGO = ZoneInfo("America/Chicago")
+# ffmpeg sends 15 frames a second. This long with no new one means the camera stopped.
+CAMERA_QUIET_S = 10
 
 
 class Elapsed(NamedTuple):
@@ -69,6 +72,7 @@ def main() -> None:
     class Grab(NamedTuple):
         jpeg: bytes
         capture_ms: int
+        seq: int
 
     class Passes(NamedTuple):
         boxes: tuple[sight.Box, ...]
@@ -109,10 +113,11 @@ def main() -> None:
         with capture.frame_lock:
             started = time.perf_counter()
             jpg = bytes(capture.latest)
+            seq = capture.frame_seq
             capture_ms = round((time.perf_counter() - started) * 1000)
         if not jpg:
             return None
-        return Grab(jpg, capture_ms)
+        return Grab(jpg, capture_ms, seq)
 
     def detect(models: Models, jpeg: bytes) -> Passes:
         import accuracy
@@ -178,31 +183,68 @@ def main() -> None:
     import live
     import capture
 
+    error_file = live.error_path(db_path)
+    shown: str | None = "unknown"
+
+    def report(text: str | None) -> None:
+        """One line on the board saying why it is not ticking. None clears it."""
+        nonlocal shown
+        if text == shown:
+            return
+        shown = text
+        if text is None:
+            error_file.unlink(missing_ok=True)
+            return
+        print(text, file=sys.stderr, flush=True)
+        error_file.parent.mkdir(parents=True, exist_ok=True)
+        error_file.write_text(text + "\n", encoding="utf-8")
+
+    report(None)
     serving = live.serve(db_path, frames, 8080)
     db = None
     try:
         threading.Thread(target=capture.capture, daemon=True).start()
-        models = load()
-        db = ledger.connect(db_path)
+        try:
+            models = load()
+            db = ledger.connect(db_path)
+        except (Exception, SystemExit) as error:
+            traceback.print_exc()
+            report(f"The board did not start: {error}. See /tmp/preview.log.")
+            serving.wait()
+            return
+        last_seq = -1
+        waiting_since = time.monotonic()
         while True:
             grab = copy_jpeg()
-            if grab is None:
+            if grab is None or grab.seq == last_seq:
+                quiet = time.monotonic() - waiting_since
+                if quiet > CAMERA_QUIET_S:
+                    report(f"No new camera picture for {int(quiet)} s. Check the webcam on /dev/video0.")
                 # Same pause capture uses between ffmpeg restarts.
                 time.sleep(0.2)
                 continue
-            passes = detect(models, grab.jpeg)
-            tick(
-                db,
-                frames,
-                grab.jpeg,
-                passes.boxes,
-                datetime.now(CHICAGO),
-                Elapsed(
-                    capture_ms=grab.capture_ms,
-                    tank_ms=passes.tank_ms,
-                    person_ms=passes.person_ms,
-                ),
-            )
+            last_seq = grab.seq
+            waiting_since = time.monotonic()
+            try:
+                passes = detect(models, grab.jpeg)
+                tick(
+                    db,
+                    frames,
+                    grab.jpeg,
+                    passes.boxes,
+                    datetime.now(CHICAGO),
+                    Elapsed(
+                        capture_ms=grab.capture_ms,
+                        tank_ms=passes.tank_ms,
+                        person_ms=passes.person_ms,
+                    ),
+                )
+            except Exception as error:
+                traceback.print_exc()
+                report(f"The last tick failed: {type(error).__name__}: {error}")
+                time.sleep(1)
+                continue
+            report(None)
     except KeyboardInterrupt:
         pass
     finally:

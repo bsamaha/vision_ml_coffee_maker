@@ -42,6 +42,10 @@ body {
   color: #b7ffcf;
 }
 #board.review .live-mark { color: #ffd36a; }
+.freshness { display: flex; align-items: center; gap: 14px; }
+.age { margin: 0; font-size: 12px; font-weight: 700; color: #9a9a9a; }
+#board.lagging .live-mark, #board.lagging .age { color: #ff6d6d; }
+#board.lagging #top { background: #2a0d0d; }
 #level, #status {
   min-height: 0;
   overflow: auto;
@@ -156,6 +160,7 @@ body {
 #unverified { background: #3a2f10; color: #ffd36a; }
 #stale-banner { background: #a30; color: #fff; }
 #review { background: #3a2f10; color: #ffd36a; }
+#board-error { top: 12px; bottom: auto; background: #6e1212; color: #fff; }
 #dock {
   grid-column: 1 / -1;
   padding: 8px 12px 10px;
@@ -260,7 +265,10 @@ body {
 <main id="board">
   <header id="top">
     <p id="when"><time datetime="2026-10-12T12:00:15-05:00">Monday 12 October 2026 · 12:00:15 PM</time></p>
-    <p class="live-mark" id="live-mark">Live</p>
+    <div class="freshness">
+      <p class="age" id="age">Updated 3 s ago</p>
+      <p class="live-mark" id="live-mark">Live</p>
+    </div>
   </header>
 
   <section id="level" aria-label="Level">
@@ -290,6 +298,7 @@ body {
     <p id="unverified" class="flag" hidden>Unverified rise. Bill unchanged.</p>
     <p id="stale-banner" class="flag" hidden>Stale. 4 ticks with no level.</p>
     <p id="review" class="flag" hidden>Earlier frame. The numbers stay live.</p>
+    <p id="board-error" class="flag" hidden></p>
   </div>
 
   <section id="status" aria-label="Alarm and activity">
@@ -307,7 +316,7 @@ body {
       <p class="k">Person right now</p>
       <p id="person-line">No</p>
     </div>
-    <div class="block log-block">
+    <div class="block log-block" id="log-block">
       <p class="k">Events</p>
       <ol id="events"></ol>
     </div>

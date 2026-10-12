@@ -11,7 +11,7 @@ import tempfile
 import unittest
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -221,7 +221,7 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(node(page, "unverified"), "Unverified rise. Bill unchanged.")
         self.assertEqual(node(page, "ounces"), "40.0 fl oz")
 
-    def test_eight_frames_link_to_an_earlier_index(self):
+    def test_eight_frames_link_to_an_earlier_frame_by_name(self):
         folder = self.folder()
         path, frames = self.database(folder)
         when = datetime.fromisoformat("2026-10-12T12:00:15-05:00")
@@ -252,7 +252,7 @@ class LiveTests(unittest.TestCase):
             self.assertEqual(captions[-1], "Now")
             self.assertEqual(
                 re.findall(r'href="([^"]*)"', strip),
-                [f"/?frame={index}" for index in range(8)],
+                [f"/?frame={name}" for name in names],
             )
             self.assertLess(strip.index("shot-0.jpg"), strip.index("shot-7.jpg"))
             self.assertNotIn("notes.txt", strip)
@@ -266,14 +266,14 @@ class LiveTests(unittest.TestCase):
             self.assertIn("hidden", opening(page, "review"))
             self.assertIn("shot-7.jpg", opening(page, "frame"))
             self.assertEqual(node(page, "ounces"), "40.0 fl oz")
-            earlier = self.read(running, "/?frame=0")
+            earlier = self.read(running, "/?frame=shot-0.jpg")
             self.assertEqual(node(earlier, "live-mark"), "Earlier frame")
             self.assertNotIn("hidden", opening(earlier, "review"))
             self.assertEqual(node(earlier, "review"), "Earlier frame. The numbers stay live.")
             self.assertIn("review", classes(opening(earlier, "board")))
             self.assertEqual(node(earlier, "ounces"), "40.0 fl oz")
             self.assertIn("shot-0.jpg", opening(earlier, "frame"))
-            fallback = self.read(running, "/?frame=99")
+            fallback = self.read(running, "/?frame=shot-gone.jpg")
             self.assertEqual(node(fallback, "live-mark"), "Live")
             self.assertIn("hidden", opening(fallback, "review"))
             self.assertIn("shot-7.jpg", opening(fallback, "frame"))
@@ -281,6 +281,16 @@ class LiveTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertEqual(kind, "image/jpeg")
             self.assertEqual(body, (frames / "shot-0.jpg").read_bytes())
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{running.port}/frame/shot-0.jpg",
+                headers={"If-Modified-Since": "Tue, 14 Nov 2023 22:13:20 GMT"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as cached:
+                urllib.request.urlopen(request, timeout=5)
+            self.assertEqual(cached.exception.code, 304)
+            os.utime(frames / "shot-0.jpg", (base + 100, base + 100))
+            with urllib.request.urlopen(request, timeout=5) as resp:
+                self.assertEqual(resp.status, 200)
             status, _kind, _body = self.body(running, "/frame/notes.txt")
             self.assertEqual(status, 404)
             status, _kind, _body = self.body(running, "/frame/%2e%2e%2fshot-0.jpg")
@@ -307,6 +317,50 @@ class LiveTests(unittest.TestCase):
         self.assertNotIn("Preview, not on the Pi", page)
         self.assertNotIn("data-state=", page)
         self.assertNotIn("120 ms", block(page, "ticks", "</ul>"))
+
+    def test_board_error_file_shows_a_flag(self):
+        folder = self.folder()
+        path, frames = self.database(folder)
+        page = self.page(path, frames)
+        self.assertIn("hidden", opening(page, "board-error"))
+        live.error_path(path).write_text("Tank model did not load: missing weights\n", encoding="utf-8")
+        page = self.page(path, frames)
+        self.assertNotIn("hidden", opening(page, "board-error"))
+        self.assertEqual(node(page, "board-error"), "Tank model did not load: missing weights")
+
+    def test_the_page_polls_and_stamps_the_tick_age(self):
+        folder = self.folder()
+        path, frames = self.database(folder)
+        self.fill(path, [("12:00", 40, False)])
+        page = self.page(path, frames)
+        self.assertIn('data-tick="2026-10-12T12:00:00-05:00"', opening(page, "age"))
+        self.assertTrue(node(page, "age").startswith("Updated "))
+        self.assertIn("setInterval(poll, 3000)", page)
+        self.assertIn('data-mark="Live"', opening(page, "live-mark"))
+
+    def test_the_log_keeps_the_newest_fifty_lines(self):
+        folder = self.folder()
+        path, frames = self.database(folder)
+        self.fill(path, [("12:00", 40, False)])
+        db = ledger.connect(path)
+        try:
+            for index in range(60):
+                db.execute(
+                    "INSERT INTO event (ts, day, kind, message) VALUES (?, ?, 'person', ?)",
+                    ("2026-10-12T11:00:00-05:00", "2026-10-12", f"Line {index}."),
+                )
+        finally:
+            db.close()
+        page = self.page(path, frames)
+        events = block(page, "events", "</ol>")
+        self.assertEqual(events.count("<li>"), 50)
+        self.assertIn("Line 59.", events)
+        self.assertNotIn("Line 9.", events)
+
+    def test_elapsed_shows_hours(self):
+        start = at("09:00")
+        self.assertEqual(live._elapsed(start, start + timedelta(seconds=90)), "1:30")
+        self.assertEqual(live._elapsed(start, start + timedelta(seconds=3725)), "1:02:05")
 
     def test_missing_file_stays_missing(self):
         folder = self.folder()

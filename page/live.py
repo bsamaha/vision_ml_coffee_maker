@@ -10,18 +10,20 @@ Production, from the repo root:
 
 from __future__ import annotations
 
+import functools
 import html
 import sqlite3
 import threading
 import urllib.parse
 from datetime import date, datetime, timedelta
+from email.utils import formatdate, parsedate_to_datetime
 from enum import Enum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
-__all__ = ["serve", "Serving"]
+__all__ = ["serve", "Serving", "error_path"]
 
 _CHICAGO = ZoneInfo("America/Chicago")
 _WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
@@ -45,6 +47,56 @@ _STALE = "Stale. 4 ticks with no level."
 _UNVERIFIED = "Unverified rise. Bill unchanged."
 _REVIEW = "Earlier frame. The numbers stay live."
 _DOT = "\u00b7"
+_EVENTS = 50
+# Seconds between polls, and the reading age past which the board says it is not updating.
+_POLL_S = 3
+_LAG_S = 30
+_SCRIPT = f"""
+"use strict";
+(function () {{
+  function age() {{
+    const stamp = document.getElementById("age");
+    if (!stamp || !stamp.dataset.tick) return;
+    const seconds = Math.max(0, Math.round((Date.now() - Date.parse(stamp.dataset.tick)) / 1000));
+    let text = seconds + " s ago";
+    if (seconds >= 3600) text = Math.floor(seconds / 3600) + " h ago";
+    else if (seconds >= 60) text = Math.floor(seconds / 60) + " min ago";
+    stamp.textContent = "Updated " + text;
+    const lagging = seconds > {_LAG_S};
+    document.getElementById("board").classList.toggle("lagging", lagging);
+    const mark = document.getElementById("live-mark");
+    if (lagging) mark.textContent = "Not updating";
+    else if (mark.textContent === "Not updating") mark.textContent = mark.dataset.mark;
+  }}
+  async function poll() {{
+    try {{
+      const response = await fetch(location.pathname + location.search, {{ cache: "no-store" }});
+      if (!response.ok) return;
+      const next = new DOMParser().parseFromString(await response.text(), "text/html");
+      const fresh = next.getElementById("board");
+      if (!fresh) return;
+      const kept = {{}};
+      for (const id of ["level", "status", "log-block"]) {{
+        const old = document.getElementById(id);
+        if (old) kept[id] = old.scrollTop;
+      }}
+      document.getElementById("board").replaceWith(fresh);
+      for (const id in kept) {{
+        const now = document.getElementById(id);
+        if (now) now.scrollTop = kept[id];
+      }}
+    }} catch (error) {{
+      return;
+    }} finally {{
+      age();
+    }}
+  }}
+  age();
+  setInterval(age, 1000);
+  setInterval(poll, {_POLL_S * 1000});
+}})();
+"""
+_ERROR_FILE = "board-error.txt"
 _PHOTO = """
 #frame {
   position: relative;
@@ -173,7 +225,7 @@ class _Quiet(NamedTuple):
 
 
 class _Shown(NamedTuple):
-    """One tick the ledger has finished writing."""
+    """One tick the ledger has finished writing. `log` is the newest `_EVENTS` lines."""
 
     live: _Live
     log: tuple[_LogLine, ...]
@@ -195,11 +247,13 @@ class _Server(ThreadingHTTPServer):
 
     db: Path
     frames: Path
+    error: Path
 
     def __init__(self, db: Path, frames: Path, port: int) -> None:
         super().__init__(("0.0.0.0", port), _Handler)
         self.db = db
         self.frames = frames
+        self.error = error_path(db)
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -212,8 +266,9 @@ class _Handler(BaseHTTPRequestHandler):
         if parsed.path == "/":
             board = _load(server.db, server.frames)
             raw = urllib.parse.parse_qs(parsed.query, keep_blank_values=True).get("frame", [None])[0]
-            body = _html(board, _choice(len(board.frames), raw)).encode("utf-8")
-            self._send(200, body, "text/html; charset=utf-8")
+            selected = _choice(board.frames, raw)
+            body = _html(board, selected, _board_error(server.error)).encode("utf-8")
+            self._send(200, body, "text/html; charset=utf-8", {"Cache-Control": "no-store"})
             return
         if parsed.path.startswith("/frame/"):
             self._jpeg(server, parsed.path[len("/frame/") :])
@@ -233,12 +288,31 @@ class _Handler(BaseHTTPRequestHandler):
         if path.resolve().parent != server.frames.resolve():
             self._send(404, b"Not found", "text/plain; charset=utf-8")
             return
-        self._send(200, path.read_bytes(), "image/jpeg")
+        # A wiped run reuses file names, so the browser revalidates by mtime instead of caching blind.
+        modified = int(path.stat().st_mtime)
+        headers = {"Cache-Control": "no-cache", "Last-Modified": formatdate(modified, usegmt=True)}
+        since = self.headers.get("If-Modified-Since")
+        if since is not None:
+            try:
+                unchanged = int(parsedate_to_datetime(since).timestamp()) >= modified
+            except (TypeError, ValueError):
+                unchanged = False
+            if unchanged:
+                self.send_response(304)
+                for key, value in headers.items():
+                    self.send_header(key, value)
+                self.end_headers()
+                return
+        self._send(200, path.read_bytes(), "image/jpeg", headers)
 
-    def _send(self, status: int, body: bytes, content_type: str) -> None:
+    def _send(
+        self, status: int, body: bytes, content_type: str, headers: dict[str, str] | None = None
+    ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -289,6 +363,19 @@ def serve(db: Path, frames: Path, port: int = 8080) -> Serving:
     return Serving(int(httpd.server_address[1]), httpd, thread)
 
 
+def error_path(db: Path) -> Path:
+    """Where the board process writes the one line that explains why it is not ticking."""
+    return db.with_name(_ERROR_FILE)
+
+
+def _board_error(path: Path) -> str | None:
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return text or None
+
+
 def _one_name(name: str) -> bool:
     if name in ("", ".", ".."):
         return False
@@ -297,16 +384,14 @@ def _one_name(name: str) -> bool:
     return Path(name).name == name
 
 
-def _choice(count: int, raw: str | None) -> int | None:
-    if count == 0:
+def _choice(frames: tuple[_Frame, ...], raw: str | None) -> int | None:
+    """The frame named in the query. A name that aged out falls back to the newest."""
+    if not frames:
         return None
-    last = count - 1
-    if raw is None or not raw.isdigit():
-        return last
-    index = int(raw)
-    if index >= count:
-        return last
-    return index
+    for index, frame in enumerate(frames):
+        if frame.name == raw:
+            return index
+    return len(frames) - 1
 
 
 def _frames(folder: Path) -> tuple[_Frame, ...]:
@@ -345,7 +430,7 @@ def _tenths(value: float | None) -> int | None:
 
 
 def _load(db: Path, frames: Path) -> _Quiet | _Shown:
-    """Parse one committed tick into a board. Four statements, one read transaction."""
+    """Parse one committed tick into a board. Five bounded statements, one read transaction."""
     shots = _frames(frames)
     if not db.is_file():
         return _Quiet(shots)
@@ -376,17 +461,30 @@ def _load(db: Path, frames: Path) -> _Quiet | _Shown:
                 FROM reading ORDER BY id DESC LIMIT 1
                 """
             ).fetchone()
+            if machine is None or reading is None:
+                return _Quiet(shots)
+            tick_at = datetime.fromisoformat(str(reading["ts"]))
+            since = (tick_at.astimezone(_CHICAGO).date() - timedelta(days=3)).isoformat()
             events = conn.execute(
+                "SELECT ts, message FROM event ORDER BY id DESC LIMIT ?", (_EVENTS,)
+            ).fetchall()
+            fill_rows = conn.execute(
+                "SELECT day, delta_oz FROM event WHERE kind = 'fill' AND day >= ?", (since,)
+            ).fetchall()
+            # One index seek per logged day, so the page never walks every reading.
+            days = conn.execute(
                 """
-                SELECT ts, day, kind, message, delta_oz
-                FROM event ORDER BY id DESC
+                WITH RECURSIVE logged(day) AS (
+                  SELECT min(day) FROM reading
+                  UNION ALL
+                  SELECT (SELECT min(day) FROM reading WHERE day > logged.day)
+                  FROM logged WHERE logged.day IS NOT NULL
+                )
+                SELECT day FROM logged WHERE day IS NOT NULL
                 """
             ).fetchall()
-            days = conn.execute("SELECT day, COUNT(*) FROM reading GROUP BY day").fetchall()
         finally:
             conn.execute("ROLLBACK")
-        if machine is None or reading is None:
-            return _Quiet(shots)
         booked = _tenths(machine["booked_oz"])
         gauge = _tenths(reading["gauge_oz"])
         temp = reading["temp_c"]
@@ -394,7 +492,7 @@ def _load(db: Path, frames: Path) -> _Quiet | _Shown:
         # filled_oz / 5 * $0.50 is filled_oz * 10 cents, so these tenths are already coffee cents.
         filled_tenths = round(float(machine["filled_oz"]) * 10)
         live = _Live(
-            tick_at=datetime.fromisoformat(str(reading["ts"])),
+            tick_at=tick_at,
             booked=None if booked is None else _Ounces(booked),
             gauge=None if gauge is None else _Ounces(gauge),
             alarm_on=bool(machine["alarm"]),
@@ -426,8 +524,8 @@ def _load(db: Path, frames: Path) -> _Quiet | _Shown:
         )
         fills = tuple(
             _Fill(date.fromisoformat(str(row["day"])), round(float(row["delta_oz"]) * 10))
-            for row in events
-            if row["kind"] == "fill" and row["delta_oz"] is not None
+            for row in fill_rows
+            if row["delta_oz"] is not None
         )
         logged = tuple(date.fromisoformat(str(row[0])) for row in days)
         return _Shown(live, log, logged, fills, shots)
@@ -451,9 +549,12 @@ def _model_line(gauge: _Ounces | None, booked: _Ounces | None) -> str | None:
 
 
 def _elapsed(start: datetime, end: datetime) -> str:
-    """Unpadded minutes and two-digit seconds. 15 seconds is `0:15`. 90 is `1:30`."""
+    """Unpadded minutes and two-digit seconds. 15 seconds is `0:15`. 90 is `1:30`. 3725 is `1:02:05`."""
     seconds = max(0, int((end - start).total_seconds()))
     minutes, remain = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{remain:02d}"
     return f"{minutes}:{remain:02d}"
 
 
@@ -558,12 +659,14 @@ def _between(text: str, start: str, end: str, missing: str) -> str:
     return text[at : stop + len(end)]
 
 
+@functools.cache
 def _specimen() -> str:
     """CSS from `page/live.html` beside this file. The preview footer stays in that file."""
     text = Path(__file__).with_name("live.html").read_text(encoding="utf-8")
     return _between(text, "<style>", "</style>", "style block missing")
 
 
+@functools.cache
 def _hero() -> str:
     text = Path(__file__).with_name("live.html").read_text(encoding="utf-8")
     svg = _between(text, '<svg id="hero"', "</svg>", "hero svg missing")
@@ -588,11 +691,29 @@ def _flag(element_id: str, text: str, show: bool) -> str:
     return f'<p id="{element_id}" class="flag"{hidden}>{_esc(text)}</p>'
 
 
-def _html(board: _Quiet | _Shown, selected: int | None) -> str:
+def _age(tick_at: datetime, now: datetime) -> str:
+    """`Updated 7 s ago`, then minutes, then hours. The page script keeps it counting."""
+    seconds = max(0, int((now - tick_at).total_seconds()))
+    if seconds >= 3600:
+        return f"Updated {seconds // 3600} h ago"
+    if seconds >= 60:
+        return f"Updated {seconds // 60} min ago"
+    return f"Updated {seconds} s ago"
+
+
+def _html(
+    board: _Quiet | _Shown,
+    selected: int | None,
+    error: str | None = None,
+    now: datetime | None = None,
+) -> str:
     """The document. Live text is written here. Preview chrome is sliced from the specimen."""
     frames = board.frames
     earlier = selected is not None and selected != len(frames) - 1
+    if now is None:
+        now = datetime.now(_CHICAGO)
     if isinstance(board, _Quiet):
+        age_html = '<p class="age" id="age"></p>'
         when = ""
         band_html = '<p class="band" id="band-name"></p>'
         ounces = ""
@@ -619,6 +740,10 @@ def _html(board: _Quiet | _Shown, selected: int | None) -> str:
     else:
         live = board.live
         wall = _wall(live.tick_at)
+        age_html = (
+            f'<p class="age" id="age" data-tick="{_esc(live.tick_at.isoformat())}">'
+            f"{_esc(_age(live.tick_at, now))}</p>"
+        )
         when = (
             f'<time datetime="{_esc(wall.attribute)}">'
             f"{_esc(wall.date_line)} {_DOT} {_esc(wall.clock)}</time>"
@@ -680,8 +805,9 @@ def _html(board: _Quiet | _Shown, selected: int | None) -> str:
     for index, (frame, caption) in enumerate(zip(frames, captions)):
         current = ' aria-current="page"' if index == selected else ""
         src = _esc(_src(frame.name))
+        href = "/?frame=" + urllib.parse.quote(frame.name, safe="")
         strip.append(
-            f'<a href="/?frame={index}"{current}>'
+            f'<a href="{_esc(href)}"{current}>'
             f'<img src="{src}" alt="{_esc(frame.name)}">'
             f'<span class="cap">{_esc(caption)}</span></a>'
         )
@@ -705,7 +831,10 @@ def _html(board: _Quiet | _Shown, selected: int | None) -> str:
         f'<main id="board"{board_class}>\n'
         '<header id="top">\n'
         f'<p id="when">{when}</p>\n'
-        f'<p class="live-mark" id="live-mark">{_esc(mark)}</p>\n'
+        '<div class="freshness">\n'
+        f"{age_html}\n"
+        f'<p class="live-mark" id="live-mark" data-mark="{_esc(mark)}">{_esc(mark)}</p>\n'
+        "</div>\n"
         "</header>\n"
         '<section id="level" aria-label="Level">\n'
         '<p class="k">Level</p>\n'
@@ -728,6 +857,7 @@ def _html(board: _Quiet | _Shown, selected: int | None) -> str:
         f"{_flag('unverified', _UNVERIFIED, unverified)}\n"
         f"{_flag('stale-banner', _STALE, stale)}\n"
         f"{_flag('review', _REVIEW, earlier)}\n"
+        f"{_flag('board-error', error or '', error is not None)}\n"
         "</div>\n"
         '<section id="status" aria-label="Alarm and activity">\n'
         '<div class="block" id="alarm-block">\n'
@@ -744,7 +874,7 @@ def _html(board: _Quiet | _Shown, selected: int | None) -> str:
         '<p class="k">Person right now</p>\n'
         f"{person_html}\n"
         "</div>\n"
-        '<div class="block log-block">\n'
+        '<div class="block log-block" id="log-block">\n'
         '<p class="k">Events</p>\n'
         f'<ol id="events">{log_html}</ol>\n'
         "</div>\n"
@@ -756,6 +886,7 @@ def _html(board: _Quiet | _Shown, selected: int | None) -> str:
         f"{''.join(strip)}</div>\n"
         "</footer>\n"
         "</main>\n"
+        f"<script>{_SCRIPT}</script>\n"
         "</body>\n"
         "</html>\n"
     )
