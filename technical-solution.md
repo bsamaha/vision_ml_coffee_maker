@@ -2,7 +2,7 @@
 
 Hardware is in [hardware.md](hardware.md). The case is in [business-case.md](business-case.md). Publish a code change with the steps in [README.md](README.md).
 
-This is a proof on the Ninja, not a small copy of the well. A brew here empties the reservoir. On a pad the pump does not. The page shows booked ounces, ounces out in the last 15 minutes, ounces out today, person visits, refills, a coffee bill, and a refill alarm. There is no weekly rate.
+This is a proof on the Ninja, not a small copy of the well. A brew here empties the reservoir. On a pad the pump does not. The page shows booked ounces, ounces used in the last 15 minutes and today, the use rate over the last 2 minutes with a time to empty, person visits, refills, a coffee bill, and a refill alarm. There is no weekly rate.
 
 ## What is already true
 
@@ -173,7 +173,7 @@ On a seated tick with a liquid line and no person, move booked ounces by the gau
 | Used today | The same sum since local midnight. The ledger writes `out_today` on `machine`. On a brew that fits in 15 minutes the two numbers match. |
 | Coffee | $0.50 a cup. A fill bills `delta_oz`, which is 70 minus `taken_oz`, not the model delta. `filled_oz` is the sum of today's fill deltas. Coffee today is `filled_oz / 5 × 0.50`. The month is the mean of logged days × 30. A day with no rows is left out. A logged day with no refill is $0. The ledger writes `coffee_month` on `machine`. |
 
-Not in this build. An exposure probe, thumbnail files, a password, a reservoir crop, one combined model, a second Inference server, a last-minute rate, and a 24-hour rate. Each reading stores `tank_ms` and `person_ms`. The 4.4 second figure is one person pass. A slow tick waits, then the next grab starts.
+Not in this build. An exposure probe, thumbnail files, a password, a reservoir crop, one combined model, a second Inference server, and a 24-hour rate. The use rate is the net fall in booked ounces over the last 2 minutes, per minute, read from `reading` by the page; it needs a minute of history, and a rise reads as 0. Empty in is booked ounces over that rate, shown as Not draining under 0.2 fl oz a minute. Each reading stores `tank_ms` and `person_ms`. The 4.4 second figure is one person pass. A slow tick waits, then the next grab starts.
 
 ## 7. Demo
 

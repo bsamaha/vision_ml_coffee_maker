@@ -49,6 +49,11 @@ _REVIEW = "Earlier frame. The numbers stay live."
 _DOT = "\u00b7"
 _EVENTS = 50
 _DEVICE_WINDOW = timedelta(minutes=2)
+_RATE_WINDOW = timedelta(minutes=2)
+# The rate needs at least this much history, or two noisy readings would set it.
+_RATE_MIN_SPAN = timedelta(seconds=60)
+# Below this the tank is not draining. Model wobble alone moves the net fall a few tenths.
+_DRAINING = 0.2
 # Readings read for the device row. 2 minutes at the 7.5 s floor is 16, so this always covers it.
 _DEVICE_ROWS = 40
 # Seconds between polls, and the reading age past which the board says it is not updating.
@@ -266,6 +271,13 @@ class _Device(NamedTuple):
     count: int
 
 
+class _Rate(NamedTuple):
+    """Net fall of booked ounces over the last `_RATE_WINDOW`, per minute. None without enough history."""
+
+    oz_per_min: float | None
+    empty_min: float | None
+
+
 class _Live(NamedTuple):
     """Facts from the machine row plus the newest reading."""
 
@@ -287,6 +299,7 @@ class _Live(NamedTuple):
     unverified: bool
     timings: _Timings
     device: _Device
+    rate: _Rate
 
 
 class _LogLine(NamedTuple):
@@ -605,6 +618,7 @@ def _load(db: Path, frames: Path) -> _Quiet | _Shown:
                 temp_tenths=None if temp is None else round(float(temp) * 10),
             ),
             device=_device(recent, tick_at),
+            rate=_rate(recent, tick_at),
         )
         log = tuple(
             _LogLine(datetime.fromisoformat(str(row["ts"])), str(row["kind"]), str(row["message"]))
@@ -646,6 +660,41 @@ def _device(rows: list[sqlite3.Row], tick_at: datetime) -> _Device:
         every_s=every,
         count=len(window),
     )
+
+
+def _rate(rows: list[sqlite3.Row], tick_at: datetime) -> _Rate:
+    """Net, not summed, so tick-to-tick wobble cancels instead of adding up. A rise reads as 0."""
+    since = tick_at - _RATE_WINDOW
+    booked = [
+        (datetime.fromisoformat(str(row["ts"])), float(row["booked_oz"]))
+        for row in rows
+        if row["booked_oz"] is not None and datetime.fromisoformat(str(row["ts"])) >= since
+    ]
+    if len(booked) < 2:
+        return _Rate(None, None)
+    booked.sort()
+    (first_at, first), (last_at, last) = booked[0], booked[-1]
+    span = last_at - first_at
+    if span < _RATE_MIN_SPAN:
+        return _Rate(None, None)
+    per_min = max(0.0, (first - last) / (span.total_seconds() / 60))
+    empty = last / per_min if per_min >= _DRAINING else None
+    return _Rate(per_min, empty)
+
+
+def _rate_text(rate: _Rate) -> tuple[str, str]:
+    """(`4.6 fl oz/min`, `About 4 min`). Blank before there is enough history."""
+    if rate.oz_per_min is None:
+        return "", ""
+    per_min = f"{rate.oz_per_min:.1f} fl oz/min"
+    if rate.empty_min is None:
+        return per_min, "Not draining"
+    minutes = round(rate.empty_min)
+    if minutes < 1:
+        return per_min, "Under a minute"
+    if minutes < 90:
+        return per_min, f"About {minutes} min"
+    return per_min, f"About {rate.empty_min / 60:.1f} h"
 
 
 def _device_rows(device: _Device | None) -> tuple[tuple[str, str, str], ...]:
@@ -910,6 +959,8 @@ def _html(
         model_html = '<p class="model" id="model-line" hidden></p>'
         out_15 = ""
         out_today = ""
+        use_rate = ""
+        empty_in = ""
         seen = ""
         refills = ""
         volume = ""
@@ -954,6 +1005,7 @@ def _html(
             model_html = f'<p class="model" id="model-line">{_esc(model)}</p>'
         out_15 = _one_decimal(_Ounces(live.out_15m_tenths))
         out_today = _one_decimal(_Ounces(live.out_today_tenths))
+        use_rate, empty_in = _rate_text(live.rate)
         seen = str(live.seen_today)
         refills = str(live.refills_today)
         volume = _one_decimal(_Ounces(live.filled_tenths))
@@ -1077,6 +1129,8 @@ def _html(
         '<dl class="rows">\n'
         f'<div><dt>Used, last 15 min</dt><dd id="out-15">{_esc(out_15)}</dd></div>\n'
         f'<div><dt>Used today</dt><dd id="out-today">{_esc(out_today)}</dd></div>\n'
+        f'<div><dt>Use rate, last 2 min</dt><dd id="use-rate">{_esc(use_rate)}</dd></div>\n'
+        f'<div><dt>Empty in</dt><dd id="empty-in">{_esc(empty_in)}</dd></div>\n'
         f'<div><dt>People seen today</dt><dd id="seen-today">{_esc(seen)}</dd></div>\n'
         f'<div><dt>Refills today</dt><dd id="refill-today">{_esc(refills)}</dd></div>\n'
         f'<div><dt>Refilled today</dt><dd id="volume-today">{_esc(volume)}</dd></div>\n'

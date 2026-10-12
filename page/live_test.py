@@ -430,6 +430,42 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(node(page, "device-every"), "7.5 s")
         self.assertNotIn("class=", opening(page, "device-temp"))
 
+    def test_use_rate_is_the_net_fall_over_two_minutes(self):
+        folder = self.folder()
+        path, frames = self.database(folder)
+        db = ledger.connect(path)
+        try:
+            start = at("12:00")
+            # 40 down to 30.4 at 0.6 a tick with a wobble every fourth tick, 7.5 s apart.
+            level = 40.0
+            for index in range(17):
+                when = start + timedelta(seconds=7.5 * index)
+                wobble = 0.4 if index % 4 == 3 else 0.0
+                ledger.tick(db, ledger.Tick(when, round(level + wobble, 1), False, 0, 0, 0, 0, None, None))
+                level -= 0.6
+        finally:
+            db.close()
+        page = self.page(path, frames)
+        # 120 s from 40.0 to 30.4 is 9.6 fl oz, so 4.8 a minute, and 30.4 / 4.8 is about 6 min.
+        self.assertEqual(node(page, "use-rate"), "4.8 fl oz/min")
+        self.assertEqual(node(page, "empty-in"), "About 6 min")
+
+    def test_a_still_tank_is_not_draining(self):
+        folder = self.folder()
+        path, frames = self.database(folder)
+        self.fill(path, [("12:00", 40, False), ("12:01", 40.2, False), ("12:02", 39.9, False)])
+        page = self.page(path, frames)
+        self.assertEqual(node(page, "use-rate"), "0.1 fl oz/min")
+        self.assertEqual(node(page, "empty-in"), "Not draining")
+
+    def test_one_reading_has_no_rate_yet(self):
+        folder = self.folder()
+        path, frames = self.database(folder)
+        self.fill(path, [("12:00", 40, False)])
+        page = self.page(path, frames)
+        self.assertEqual(node(page, "use-rate"), "")
+        self.assertEqual(node(page, "empty-in"), "")
+
     def test_a_hot_pi_turns_the_temperature_red(self):
         folder = self.folder()
         path, frames = self.database(folder)
