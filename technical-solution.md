@@ -1,6 +1,6 @@
 # Run sheet
 
-Hardware is in [hardware.md](hardware.md). The case is in [business-case.md](business-case.md). Publish a code change with the steps in [README.md](README.md).
+Hardware is in [hardware.md](hardware.md). The case is in [business-case.md](business-case.md). The talk track for the demo is in [presentation.md](presentation.md). Publish a code change with the steps in [README.md](README.md).
 
 This is a proof on the Ninja, not a small copy of the well. A brew here empties the reservoir. On a pad the pump does not. The page shows booked ounces, ounces used in the last 15 minutes and today, the use rate over the last 2 minutes with a time to empty, person visits, refills, a coffee bill, and a refill alarm. There is no weekly rate.
 
