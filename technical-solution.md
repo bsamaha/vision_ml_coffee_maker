@@ -10,7 +10,7 @@ The camera stays where it is. It looks at the graduated face from a little above
 
 The camera body is upside down. There is no flip control on the device. Every still and the live page use `hflip,vflip`. The process on port 8080 is `check/board.py`, started by `scripts/pi-receive`. It owns `/dev/video0`. Open [http://192.168.1.248:8080](http://192.168.1.248:8080). The earlier pages are in `archive/check/`. Do not start one of them while the board is up.
 
-The person model is the COCO RF-DETR Nano. The tank model is the fine-tuned RF-DETR Nano, with classes `Reservoir` and `liquid-level`. Both run on the Pi's CPU. On 9 October one 1280×720 person pass took about 4.4 seconds while `ffmpeg` was flipping and encoding 60 frames a second. On 11 October, with the board's `ffmpeg` thinned to 2 frames a second, each pass takes about 1.85 seconds. Ounces come from `check/volume.py`. The live page rules are in section 6.
+The person model is the COCO RF-DETR Nano. The tank model is the fine-tuned RF-DETR Nano, with classes `Reservoir` and `liquid-level`. Both run on the Pi's CPU inside a Roboflow Workflow, with the TankGauge custom block turning their boxes into ounces (section 8). On 9 October one 1280×720 person pass took about 4.4 seconds while `ffmpeg` was flipping and encoding 60 frames a second. With `ffmpeg` thinned to 2 frames a second, each pass took about 1.85 seconds in PyTorch on 11 October, and takes about 1.6 to 1.9 seconds as ONNX in the Workflow on 12 October. Ounces come from `check/volume.py`. The live page rules are in section 6.
 
 Used, last 15 min and Used today at 0.0 fl oz are normal. The refill alarm is under 17.5 fl oz. Accuracy is only figured on readings at or above 25%.
 
@@ -160,9 +160,9 @@ One process owns the camera. `scripts/pi-receive` starts `check/board.py`.
 Each tick, in order:
 
 1. One upright 1280×720 JPEG. `hflip`, `vflip`. The focus and exposure lock stays as it was set. The loop does not change the shutter. The webcam sends 1280×720 MJPEG at 60 fps whatever `-framerate` asks for, so the board's `ffmpeg` puts `fps=2` ahead of the flip and only flips and encodes 2 frames a second. With that load gone the two models take about 3.9 s together, but a tick starts at most every 7.5 s. Brewing starts on two ticks in a row that each fall more than 0.5 fl oz. In the 11 October rehearsal a full Classic brew fell about 3.6 fl oz a minute on average (about 3 early, about 4.6 mid-brew), about 0.4 fl oz a tick at 7.5 s. At 3.9 s a tick it would fall well under 0.5 a tick and seldom start Brewing. The pause also keeps the Pi near 62 °C, under its 80 °C soft throttle; running flat out it reached 79 °C. The reading's time is when that photo was taken, not when the models finished, and `capture_ms` is how old the photo was when the tick took it. Each reading also stores the board process's memory (`rss_mb`), the CPU temperature (`temp_c`), whole-Pi CPU use since the previous tick (`cpu_pct`), and free memory (`mem_free_pct`).
-2. Tank RF-DETR Nano on that full frame. Classes `Reservoir` and `liquid-level`. Read the names from `class_names.txt`. `predict()` renames the last class to `__background__`.
-3. Person RF-DETR Nano on the same frame. This is the COCO checkpoint. Use the person class only.
-4. Gauge. `check/volume.py`. No memory. No reservoir box means `gauge_oz` is null. No liquid line means 0. Percent is cups / 14 × 100. Fluid ounces are cups × 5.
+2. The Roboflow Workflow in section 8 runs on that full frame. Its first step is the tank RF-DETR Nano, `rate-and-volume-of-coffee/1`, classes `Reservoir` and `liquid-level`.
+3. Its second step is the person RF-DETR Nano on the same frame, `rfdetr-nano`, the COCO checkpoint, kept to the person class.
+4. Its third step is the TankGauge custom block: the cup table from `check/volume.py` in `check/tank_gauge.py`. No memory. No reservoir box means `gauge_oz` is null. No liquid line means 0. Percent is cups / 14 × 100. Fluid ounces are cups × 5. If the Workflow does not load, the board runs the same two models with `rfdetr` and reads the gauge with `check/sight.py`, which gives the same answer on the same boxes, and the Raspberry Pi row says so in amber.
 5. One SQLite transaction in `learn/tank.sqlite`. Insert a `reading`. Replace the `machine` row, including both Used totals and the coffee figures. Insert an `event` when a person appearance starts, the reservoir comes back, the activity changes, or the alarm changes. A return that also changes the alarm writes both events. Tables are in `page/schema.sql`.
 6. Write the JPEG under `learn/frames/` and delete all but the newest 8. The database does not store the JPEG. Beside each JPEG, write a JSON file with the same name: every box both models returned on that frame, its class, confidence, and corners, whether the gauge or the person check used it, and the gauge reading. It is pruned with its JPEG. The JPEG itself stays clean, with no boxes drawn in.
 
@@ -190,11 +190,11 @@ On a seated tick with a liquid line and no person, move booked ounces by the gau
 | Used today | The same sum since local midnight. The ledger writes `out_today` on `machine`. On a brew that fits in 15 minutes the two numbers match. |
 | Coffee | $0.50 a cup. A fill bills `delta_oz`, which is 70 minus `taken_oz`, not the model delta. `filled_oz` is the sum of today's fill deltas. Coffee today is `filled_oz / 5 × 0.50`. The month is the mean of logged days × 30. A day with no rows is left out. A logged day with no refill is $0. The ledger writes `coffee_month` on `machine`. |
 
-Not in this build. An exposure probe, thumbnail files, a password, a reservoir crop, one combined model, a second Inference server, and a 24-hour rate. The use rate is the net fall in booked ounces over the last 2 minutes, per minute, read from `reading` by the page; it needs a minute of history, and a rise reads as 0. Empty in is booked ounces over that rate, shown as Not draining under 0.2 fl oz a minute, and Empty once the tank is dry. Each reading stores `tank_ms` and `person_ms`, about 1.85 s each on 11 October. A slow tick waits, then the next grab starts.
+Not in this build. An exposure probe, thumbnail files, a password, a reservoir crop, one combined model, an Inference server or Docker, and a 24-hour rate. The use rate is the net fall in booked ounces over the last 2 minutes, per minute, read from `reading` by the page; it needs a minute of history, and a rise reads as 0. Empty in is booked ounces over that rate, shown as Not draining under 0.2 fl oz a minute, and Empty once the tank is dry. Each reading stores `tank_ms` and `person_ms`, the Workflow's tank and person step times from its profiler, about 1.6 to 1.9 s each. A slow tick waits, then the next grab starts.
 
 ## 7. Demo
 
-Monday 12 October, 1:00 PM ET. The page is already ticking before the call. Do not push a commit during the call: a restart costs about 66 seconds while the models load.
+Monday 12 October, 1:00 PM ET. The page is already ticking before the call. Do not push a commit during the call: a restart takes over a minute while `inference` imports and both models load.
 
 Reset before the call, after any rehearsal, so the log starts clean. Events are written once and a restart does not rebuild them. From an SSH session on the Pi:
 
@@ -204,44 +204,57 @@ cd /home/bs/tank/learn && rm -f tank.sqlite tank.sqlite-wal tank.sqlite-shm boar
 cd /home/bs/tank && setsid nohup /home/bs/tank-envs/current/bin/python check/board.py >/tmp/preview.log 2>&1 </dev/null &
 ```
 
-Keep `learn/accuracy.json`. Wait about 70 seconds, then open the page and check that the header says Updated a few seconds ago and Live in green. Do not wipe after the call has started.
+Keep `learn/accuracy.json`. Leave `~/.inference/cache` and `~/tank-envs/roboflow.env` alone. Wait until the page's header says Updated a few seconds ago and Live in green, and the Raspberry Pi row says Roboflow Workflow on local Inference. While the models load it says Loading the Roboflow Workflow. Do not wipe after the call has started.
 
 WARM is off. 1-4 CUP is off. The carafe is seated and empty. Start near 40 fl oz. The camera sees the whole machine, so out means out of that frame.
 
 Stop the cycle and wait until the machine is off before the reservoir comes out.
 
-1. Open the page. The band is 3/4. The refill alarm is off. Activity is Idle. The log has no fill. Used, last 15 min and Used today are both 0.0 fl oz. Use rate reads 0.0 and Empty in says Not draining. The photo shows the Reservoir box in blue and the water line in amber with its reading. The Raspberry Pi row under the photo shows the model times, about 1.9 s each.
+1. Open the page. The band is 3/4. The refill alarm is off. Activity is Idle. The log has no fill. Used, last 15 min and Used today are both 0.0 fl oz. Use rate reads 0.0 and Empty in says Not draining. The photo shows the Reservoir box in blue and the water line in amber with its reading. The Raspberry Pi row under the photo says Roboflow Workflow on local Inference in green and shows the model times, about 1.6 to 1.9 s each. If it says In-process RF-DETR in amber, the Workflow did not load and the board is on the fallback; the demo still works.
 2. Step in where the reservoir stays visible, then step out. A green person box appears on the photo. One log line says a person was seen. People seen today becomes 1 on that line. The level is not a fill or a dump.
 3. Leave the reservoir seated and start a Classic brew from the side, without blocking the camera's view of the reservoir. The opening pause is Idle, and both Used tiles can stay 0. That is not the alarm. Brewing shows about 40 seconds after the level starts falling, and stays on through the brew. Used today climbs, Use rate shows about 3 to 5 fl oz a minute, and Empty in counts down. From 40 fl oz at about 3.6 fl oz a minute, the band goes Low and the alarm comes on about 6 minutes in, and the tank runs dry about 11 minutes in. Do not walk through the frame during the brew.
 4. Stop the cycle. Take the reservoir out of the frame, fill it to the 14-cup line, put it back, and leave the frame. Carrying it straight out is a take: a person seen in the two ticks before it disappeared counts. Wait for the return tick, the first one with the reservoir seated and nobody in view. That tick books 70 when the model rose at least 3.5 fl oz from the saved ounces. The bill is 70 minus those saved ounces. The log keeps the model reading next to 70, and the level panel shows it as Camera reads. That first reading can be low on a full, clear tank. The next settled reading becomes the full mark. Both Used tiles stay at the ounces the brew dropped. Refilled today and Refill bill today show the fill. The monthly estimate is 30 times today's dollars, because it has 1 day of data.
 
 Waiting before pressing Brew after a refill is fine. A full tank sitting still stays at 70 and Idle, and the brew plays out the same whenever it starts.
 
-## 8. Roboflow Workflow, the next step
+## 8. Roboflow Workflow
 
-Not built. The board runs both RF-DETR Nano models in process with `rfdetr`, and the Pi has no Docker or Inference server. The challenge asks for a Workflow with a custom block, deployed on Roboflow Inference. This is that design.
+The board's perception is a Roboflow Workflow with a custom block, deployed with Roboflow Inference. It runs in the board's own process through the `inference` Python package (1.7.4), with no Docker and no HTTP server. The definition is `workflow/tank-gauge.json`, and the same JSON is saved in the Roboflow app's Workflow editor.
 
 The split: the Workflow does perception and the gauge for one image. The board keeps everything that needs memory across ticks, which a Workflow does not: the camera, the ledger rules in section 6, SQLite, and the page. On the well, the same Workflow would run on every site computer.
 
 The Workflow:
 
 1. Input: one upright 1280×720 frame.
-2. Object detection: the fine-tuned tank model, `rate-and-volume-of-coffee` version 1 (the weights the Pi downloaded are `~/.roboflow/models/rate-and-volume-of-coffee-1/`), confidence 0.4.
-3. Object detection: the COCO RF-DETR Nano, `rfdetr-nano`, filtered to `person`, confidence 0.4.
-4. Custom Python block, TankGauge: today's `check/sight.py` and the cup table from `check/volume.py`. It takes both detection sets and returns `gauge_oz` (null with no reservoir, 0 with no liquid line), `person`, and the boxes it used.
-5. Outputs: both detection sets and the TankGauge values.
+2. Object detection, `roboflow_core/roboflow_object_detection_model@v2`: the fine-tuned tank model, `rate-and-volume-of-coffee/1`, confidence 0.4.
+3. Object detection: the COCO RF-DETR Nano, `rfdetr-nano`, `class_filter` `person`, confidence 0.4.
+4. TankGauge, a custom Python block defined inline as a dynamic block. It takes both detection sets and returns `gauge_oz` (null with no reservoir, 0 with no liquid line) and `person`.
+5. Outputs: both detection sets, `gauge_oz`, and `person`.
 
-The board's `detect()` becomes one HTTP call per tick to `http://127.0.0.1:9001` with the frame, and the outputs feed the same ledger tick and the same box files, so the page does not change. The in-process path stays behind a setting as the fallback.
+How it is built:
 
-To build it:
+- `check/tank_gauge.py` holds the TankGauge code. It writes the cup table from `volume.LINES` into the block, so the table has one source. `check/workflow_test.py` runs that exact code on 500 random sets of boxes and holds it to `check/sight.py`.
+- `check/workflow.py` builds the definition, compiles it once with `ExecutionEngine.init`, and runs it on each frame. `python check/workflow.py --export workflow/tank-gauge.json` writes the JSON for the Roboflow editor, and a test fails if the committed file falls behind.
+- `inference` downloads both models from Roboflow the first time, about 215 MB, into `~/.inference/cache` on the Pi. Inference serves them as ONNX on the CPU.
+- The API key is `ROBOFLOW_API_KEY`, read from the environment or from `~/tank-envs/roboflow.env` on the Pi, which is outside the repository and readable only by `bs`.
+- The board sets `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True` before importing `inference`. One Roboflow source says that default changed to off in June 2026.
+- Per-step times come from the Workflows profiler, so the Raspberry Pi row still shows the tank and person models separately.
+- `TANK_DETECTOR=local` forces the old in-process `rfdetr` path. Without it the board tries the Workflow and falls back to `rfdetr` if the Workflow does not load.
 
-1. In Roboflow, confirm the tank model is deployed, and note the workspace slug and a private API key. The key lives in a file on the Pi outside the repository.
-2. Paste the Workflow JSON, with the TankGauge code inline as a dynamic Python block, into the Workflow editor, save it, and test it on a saved rehearsal frame.
-3. On the Pi, install Docker, then start the Inference CPU server bound to `127.0.0.1:9001` with `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=true`. That default changed to off in June 2026. Custom Python runs with the server's permissions, so the server stays on localhost.
-4. Switch the board to the Workflow, run the 273 rehearsal frames through both paths, and check that the gauge readings match and the ledger replay gives the same timeline.
-5. Measure the model time, CPU, temperature, and memory on the Pi.
+What it measured, 12 October:
 
-Risks: Inference has no hardware acceleration on a Pi 4, and two RF-DETR Nano passes have to fit inside the 7.5 s tick. The container and two models may take 1.5 to 2.5 GB, offset by about 770 MB the board stops using when it no longer loads PyTorch. If the Pi is too slow, the same Workflow runs on Roboflow's hosted API, at the cost of an internet round trip and credits per tick. Estimated effort: three to four hours.
+| | In-process `rfdetr` (PyTorch) | Workflow (ONNX) |
+|---|---|---|
+| Tank model | about 1.85 s | about 1.6 to 1.9 s |
+| Person model | about 1.85 s | about 1.6 s |
+| Whole Workflow, decode to gauge | not measured | about 3.4 s |
+| CPU use | about 50% | about 50 to 60% |
+| CPU temperature | 61 to 63 °C | 59 to 63 °C |
+| Board memory | about 770 MB | about 1,450 MB, 53% of the Pi free |
+
+The Workflow read all 348 saved frames from the 11 October rehearsal. The gauge differed from the in-process path by a median of 0.00 fl oz, 329 of 336 within 1 fl oz, and the person flag and reservoir detection matched on every frame. The two large differences were the two in-process misreads, and the Workflow read both correctly: the empty tank with a person beside it, which the in-process model read as full, and the refill frame that read 52.5 of 70 fl oz. Replaying the ledger on the Workflow's readings gave the same takes, refills, bills, alarms, and empty endings for both brews. The first brew showed Brewing about 50 seconds later.
+
+The first start downloaded the models in about 4 minutes over Wi-Fi. Later starts load them from the cache.
 
 ## 9. Rehearsal, 11 October 2026
 
@@ -266,4 +279,4 @@ What the rehearsal changed:
 - Brewing ends after 60 seconds with no fall, not on the first tick that does not fall. The old rule wrote ten Brewing and Idle lines in five and a half minutes.
 - The noise floor for Used is 2 fl oz. Single-tick upticks of up to 1.4 fl oz were counting the same ounces twice, 49.4 fl oz used out of 45.6.
 
-Edge device during the brew: two RF-DETR Nano passes of about 1.9 seconds each on the Pi 4's CPU, a reading every 7.5 seconds, CPU use about 50%, CPU at 61 to 63 °C, and about 68% of memory free. Before `ffmpeg` was thinned to 2 frames a second it used 166% CPU by itself, each model pass took about 3.7 seconds, and the CPU sat at 79 °C.
+Edge device during the brew, before the Workflow: two RF-DETR Nano passes of about 1.9 seconds each on the Pi 4's CPU, a reading every 7.5 seconds, CPU use about 50%, CPU at 61 to 63 °C, and about 68% of memory free. Before `ffmpeg` was thinned to 2 frames a second it used 166% CPU by itself, each model pass took about 3.7 seconds, and the CPU sat at 79 °C.

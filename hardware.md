@@ -2,7 +2,7 @@
 
 The site computer for this proof is a Raspberry Pi 4 Model B Rev 1.5, 4 GB (3.7 GiB reported by the OS). A separate Pi 5 that powers on and then shuts off is not this board and is not set up.
 
-The microSD card is 32 GB. It was rewritten on 9 October 2026 with Ubuntu Server 24.04.5 LTS, 64-bit, image `ubuntu-24.04.5-preinstalled-server-arm64+raspi.img.xz`. There is no desktop. The root filesystem is about 29 GB, with about 25 GB free after the first-boot packages and about 21 GB free on 11 October. That meets the Inference note of a 64-bit board with at least 4 GB of RAM and about 20 GB free. Roboflow Inference is not installed yet.
+The microSD card is 32 GB. It was rewritten on 9 October 2026 with Ubuntu Server 24.04.5 LTS, 64-bit, image `ubuntu-24.04.5-preinstalled-server-arm64+raspi.img.xz`. There is no desktop. The root filesystem is about 29 GB, with about 25 GB free after the first-boot packages and about 21 GB free on 11 October. That meets the Inference note of a 64-bit board with at least 4 GB of RAM and about 20 GB free. On 12 October the `inference` Python package (1.7.4) went into the board's own environment, about 150 more packages. Docker is not installed and is not needed.
 
 `vcgencmd get_throttled` reported `throttled=0x0` with the webcam attached and the board idle. The supply was holding.
 
@@ -95,24 +95,28 @@ Controls, read on 9 October 2026:
 
 `scripts/pi-receive` starts `check/board.py` on port 8080. On this LAN that is [http://192.168.1.248:8080](http://192.168.1.248:8080). The board draws the `Reservoir`, `liquid-level`, and `person` boxes over its own photo, so the old boxed person page, `archive/check/preview.py`, is not needed. The hook does not start it.
 
-The interpreter is the slot uv builds from `uv.lock`, under `/home/bs/tank-envs/slots/`. uv is `/home/bs/.local/bin/uv`. The pins are CPU `torch` 2.14.1 and `rfdetr` 1.10.1. The person weights are `/home/bs/.roboflow/models/rf-detr-nano.pth` (349 MB), person class only. The tank weights are `/home/bs/.roboflow/models/rate-and-volume-of-coffee-1/weights.pth`, classes `Reservoir` and `liquid-level`. Both are RF-DETR Nano on CPU. The same `RFDETRNano(device="cpu")` and `predict` call as the desk supervisor. That project refuses to load without CUDA. This one does not.
+The interpreter is the slot uv builds from `uv.lock`, under `/home/bs/tank-envs/slots/`. uv is `/home/bs/.local/bin/uv`. The pins are `inference` 1.7.4, CPU `torch` 2.14.1, `rfdetr` 1.10.1, and `numpy` 2.3.5, which `inference` needs below 2.4.
+
+The board runs the Roboflow Workflow in section 8 of [technical-solution.md](technical-solution.md). `inference` downloaded both models from Roboflow as ONNX, about 215 MB, into `/home/bs/.inference/cache`, and serves them on the CPU. The Roboflow API key is in `/home/bs/tank-envs/roboflow.env`, mode 600, outside the repository. Keep both when wiping the board.
+
+The fallback path loads the older PyTorch weights. The person weights are `/home/bs/.roboflow/models/rf-detr-nano.pth` (349 MB), person class only. The tank weights are `/home/bs/.roboflow/models/rate-and-volume-of-coffee-1/weights.pth`, classes `Reservoir` and `liquid-level`. Both are RF-DETR Nano on CPU. The same `RFDETRNano(device="cpu")` and `predict` call as the desk supervisor. That project refuses to load without CUDA. This one does not.
 
 On 9 October 2026 a 1280×720 person pass took about 4.4 seconds after the weights were on disk, with `ffmpeg` encoding 60 fps beside it. The first load, including the download, was about 3 minutes. A later load was about 15 seconds. With the kitchen empty the person model returned bowl, chair, dining table, and bottle. No person was in that shot.
 
-Measured on 11 October with the board running:
+Measured with the board running:
 
-| | |
-|---|---|
-| Tank model pass, 1280×720 | about 1.85 s |
-| Person model pass, 1280×720 | about 1.85 s |
-| Reading interval | 7.5 s, the board's floor |
-| CPU use, whole Pi | about 50% |
-| CPU temperature | 61–63 °C |
-| Board process memory | about 770 MB |
-| Free memory | about 68% |
-| Restart to first reading | about 66 s, mostly loading both models |
+| | 11 October, in-process `rfdetr` | 12 October, Roboflow Workflow |
+|---|---|---|
+| Tank model pass, 1280×720 | about 1.85 s | about 1.6–1.9 s |
+| Person model pass, 1280×720 | about 1.85 s | about 1.6 s |
+| Reading interval | 7.5 s, the board's floor | 7.5 s |
+| CPU use, whole Pi | about 50% | about 50–60% |
+| CPU temperature | 61–63 °C | 59–63 °C |
+| Board process memory | about 770 MB | about 1,450 MB |
+| Free memory | about 68% | about 53% |
+| Restart to first reading | about 66 s | about 4 min the first time, mostly the model download; less from the cache |
 
-`archive/check/nano_person.py` loads its own COCO Nano and reads `:8080/frame.jpg`. The live board does not serve that path. Roboflow Inference on port 9001 is not part of this build, and Docker is not installed. The gauge is the workflow block to publish. Section 8 of [technical-solution.md](technical-solution.md) has the Workflow design. The live path runs in process on port 8080.
+`archive/check/nano_person.py` loads its own COCO Nano and reads `:8080/frame.jpg`. The live board does not serve that path. Roboflow Inference runs inside the board process, not as a server on port 9001, and Docker is not installed. The live path serves the page on port 8080.
 
 Every frame and box file from the 11 October rehearsal is in `/home/bs/rehearsal-2026-10-11/` (273 frames).
 

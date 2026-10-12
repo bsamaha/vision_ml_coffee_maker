@@ -14,17 +14,29 @@ If the install fails, the push fails and the process that was already running st
 ## Change a dependency
 
 1. Edit the pin in `pyproject.toml`.
-2. From this directory, run `uv lock`.
+2. From this directory, run `uv lock --python-preference managed`. The project only allows a system Python, and the Mac's is not 3.12; the lock does not depend on which interpreter wrote it.
 3. Commit `pyproject.toml` and `uv.lock` together.
 4. Push with the steps above.
 
 The Pi installs that lock into a slot under `/home/bs/tank-envs/slots/`. An unchanged lock skips the install. `torch` and `torchvision` come from the CPU index named in `pyproject.toml`.
 
+A large install, such as the first one with `inference`, downloads hundreds of megabytes over the Pi's Wi-Fi, and the push's SSH session can drop partway through, which stops the hook. If that happens, the ref is already on the Pi. Run the hook there, detached from SSH, and watch its log:
+
+```sh
+echo "0 <commit sha> refs/heads/<branch>" > /tmp/deploy.stdin
+setsid nohup sh -c 'sh /home/bs/tank.git/hooks/post-receive < /tmp/deploy.stdin > /tmp/deploy.log 2>&1; echo "hook exit $?" >> /tmp/deploy.log' >/dev/null 2>&1 </dev/null &
+tail -f /tmp/deploy.log
+```
+
+The same command with an older commit is the rollback. It installs that commit's lock again if needed, from uv's cache, and restarts the board on it.
+
 ## What the Pi updates
 
 `scripts/pi-receive` is the hook. A push checks that commit out into `/home/bs/tank`, installs the lock when the lock changed, and starts `check/board.py` with that slot's Python. That process owns the camera and serves the live board on port 8080. The earlier capture, preview, and compare pages are in `archive/check/`.
 
-uv on the Pi is `/home/bs/.local/bin/uv`. Git does not track the slot or the weights. The weights are `/home/bs/.roboflow/models/`.
+uv on the Pi is `/home/bs/.local/bin/uv`. Git does not track the slot, the weights, or the API key. The Workflow's models are cached in `/home/bs/.inference/cache`, the fallback's weights are in `/home/bs/.roboflow/models/`, and the Roboflow API key is in `/home/bs/tank-envs/roboflow.env`. On the Mac the key is in `.env`, which `.gitignore` excludes.
+
+The Workflow in `workflow/tank-gauge.json` is generated. After changing `check/tank_gauge.py`, `check/volume.py`, or `check/workflow.py`, run `python check/workflow.py --export workflow/tank-gauge.json`, commit the JSON, and paste it into the Roboflow Workflow editor so the app matches the Pi.
 
 ## Leave the camera to that process
 

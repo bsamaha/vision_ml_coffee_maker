@@ -58,7 +58,7 @@ Every few minutes, the site computer takes a frame and runs a small Roboflow mod
 
 The same frames show whether the pumpjack is moving, by comparing consecutive frames. Spills can be added later as another class, trained on images from the deployed cameras.
 
-In the field the models and the gauge run as one Roboflow Workflow on Roboflow Inference on each site computer: the tank model, the person model, and a custom block that turns the boxes into gallons. The site computer keeps the log and the rules that need memory, such as what counts as a fill. This proof runs the same two models directly on its Pi. Packaging them as that Workflow is the next step, laid out in section 8 of [technical-solution.md](technical-solution.md).
+In the field the models and the gauge run as one Roboflow Workflow on Roboflow Inference on each site computer: the tank model, the person model, and a custom block that turns the boxes into gallons. The site computer keeps the log and the rules that need memory, such as what counts as a fill. This proof already runs that way. Its Pi runs the tank model, the person model, and a TankGauge custom block as one Roboflow Workflow, in the board's own process with the `inference` library, no Docker and no cloud call per frame. The same Workflow is saved in the Roboflow app. Section 8 of [technical-solution.md](technical-solution.md) has the details.
 
 ### What it records
 
@@ -117,7 +117,7 @@ The sensor is only an option if there is a spare port on this box or on the site
 
 ### Hardware per site (one-time)
 
-A site needs a camera, a small computer to run the model, and a cellular connection. A GPU isn't necessary. The model reads one image every few minutes, and RF-DETR Nano takes about [0.7 seconds per image on a Raspberry Pi 5 and about 2.2 seconds on a Pi 4-class chip](https://camertronix.com/benchmarking-yolov9-and-rf-detr-on-pi-4-and-5/). Roboflow's inference server [supports both](https://inference.roboflow.com/install/raspberry-pi/). This proof measured about 1.9 seconds per RF-DETR Nano pass on its Raspberry Pi 4 CPU at 1280×720, running two models every 7.5 seconds at about 50% CPU and 62 °C.
+A site needs a camera, a small computer to run the model, and a cellular connection. A GPU isn't necessary. The model reads one image every few minutes, and RF-DETR Nano takes about [0.7 seconds per image on a Raspberry Pi 5 and about 2.2 seconds on a Pi 4-class chip](https://camertronix.com/benchmarking-yolov9-and-rf-detr-on-pi-4-and-5/). Roboflow's inference server [supports both](https://inference.roboflow.com/install/raspberry-pi/). This proof measured about 1.6 to 1.9 seconds per RF-DETR Nano pass on its Raspberry Pi 4 CPU at 1280×720, running two models in a Roboflow Workflow every 7.5 seconds at about 50 to 60% CPU and 62 °C, with about half the Pi's 4 GB of memory free.
 
 | Part | Price | Source |
 |---|---|---|
@@ -222,7 +222,8 @@ The demo shows:
 - **Consumption.** A brew reads as Brewing within about 40 seconds of the level starting to fall, Used today follows the drop, and the use rate and time to empty update as it goes.
 - **The refill alarm** once a brew drops the reservoir under 17.5 fl oz.
 - **The photos** stay on the Pi. The page shows the newest 8 frames, each with its detection boxes.
-- **The edge device.** Two RF-DETR Nano models on a Raspberry Pi 4's CPU, about 1.9 seconds each, a reading every 7.5 seconds, at about 50% CPU and 62 °C.
+- **The Roboflow Workflow on the edge device.** The tank model, the person model, and the TankGauge custom block, run with Roboflow Inference on a Raspberry Pi 4's CPU: about 1.6 to 1.9 seconds per model, a reading every 7.5 seconds, at about 50 to 60% CPU and 62 °C. The same Workflow is open in the Roboflow app.
+- **Agreement between two runtimes.** On 348 saved rehearsal frames, the Workflow and the earlier in-process models agreed on the gauge within 1 fl oz on 329 of 336 readings, and on every person flag. Where they disagreed by more, on two frames, the Workflow was right.
 
 In the 11 October rehearsal a full tank was taken, refilled, and brewed to empty. The board booked the refill at $7.00, showed Brewing for the whole brew, raised the alarm at 17.4 fl oz, and ended at 0 fl oz with 70.0 fl oz used, exactly what went in.
 
