@@ -278,25 +278,15 @@ body {
 /* Dock */
 #dock { grid-column: 1 / -1; padding: 10px 12px; }
 .dock-row { display: flex; align-items: flex-start; gap: 12px; }
-.prior { display: flex; gap: 8px; flex: 1; min-width: 0; margin: 0; }
-.prior div {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--tile);
-}
-.prior span, .ticks span {
+.ticks span {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: .08em;
   text-transform: uppercase;
   color: var(--muted);
 }
-.prior b { font-size: 12px; font-weight: 700; }
-.diag { flex: none; }
+.diag { flex: 1; min-width: 0; }
+.diag summary { display: inline-block; }
 .diag summary {
   cursor: pointer;
   list-style: none;
@@ -391,7 +381,6 @@ body {
   #status { grid-column: 1; grid-row: 4; overflow: visible; }
   .log-block { max-height: 50vh; }
   .dock-row { flex-wrap: wrap; }
-  .prior { flex-wrap: wrap; }
 }
 </style>
 </head>
@@ -417,7 +406,7 @@ body {
         <p class="k">Level</p>
         <p class="band" id="band-name">3/4</p>
         <p class="oz" id="ounces">40.0 fl oz</p>
-        <p class="model" id="model-line" hidden>Model 47.3 fl oz</p>
+        <p class="model" id="model-line" hidden>Camera reads 47.3 fl oz</p>
       </div>
       <div class="gauge" id="gauge" style="--fill: 57.1%" aria-hidden="true">
         <div class="gauge-fill"></div>
@@ -425,13 +414,13 @@ body {
       </div>
     </div>
     <dl class="rows">
-      <div><dt>15 min out</dt><dd id="out-15">0</dd></div>
-      <div><dt>Today out</dt><dd id="out-today">0</dd></div>
-      <div><dt>Seen today</dt><dd id="seen-today">0</dd></div>
-      <div><dt>Refills</dt><dd id="refill-today">0</dd></div>
-      <div><dt>Filled today</dt><dd id="volume-today">0 fl oz</dd></div>
-      <div><dt>Coffee today</dt><dd id="bill-today">$0.00</dd></div>
-      <div><dt id="logged-days">Month · 1 day</dt><dd id="monthly">$0.00</dd></div>
+      <div><dt>Used, last 15 min</dt><dd id="out-15">0.0 fl oz</dd></div>
+      <div><dt>Used today</dt><dd id="out-today">0.0 fl oz</dd></div>
+      <div><dt>People seen today</dt><dd id="seen-today">0</dd></div>
+      <div><dt>Refills today</dt><dd id="refill-today">0</dd></div>
+      <div><dt>Refilled today</dt><dd id="volume-today">0.0 fl oz</dd></div>
+      <div><dt>Refill bill today</dt><dd id="bill-today">$0.00</dd></div>
+      <div><dt id="logged-days">Monthly estimate (1 day of data)</dt><dd id="monthly">$0.00</dd></div>
     </dl>
   </section>
 
@@ -443,15 +432,15 @@ body {
       <line id="surface" x1="20" x2="340" y1="360" y2="360" stroke="#f3eadf" stroke-width="4"/>
       <text id="noline" x="180" y="370" text-anchor="middle" fill="#f4f4f4" font-size="28" font-family="system-ui, sans-serif" font-weight="700" visibility="hidden">No level</text>
     </svg>
-    <p id="unverified" class="flag" hidden>Unverified rise. Bill unchanged.</p>
-    <p id="stale-banner" class="flag" hidden>Stale. 4 ticks with no level.</p>
+    <p id="unverified" class="flag" hidden>Level jumped without a refill. Not billed. Confirming.</p>
+    <p id="stale-banner" class="flag" hidden>Reservoir not in view. Holding the last level.</p>
     <p id="review" class="flag" hidden>Earlier frame. The numbers stay live.</p>
     <p id="board-error" class="flag" hidden></p>
   </div>
 
   <section id="status" aria-label="Alarm and activity">
     <div class="block" id="alarm-block">
-      <p class="k">Alarm</p>
+      <p class="k">Refill alarm</p>
       <p class="big" id="alarm-value">Off</p>
       <p class="sub" id="alarm-age">for 0:15</p>
     </div>
@@ -461,7 +450,7 @@ body {
       <p class="sub" id="activity-detail">level still 0:15</p>
     </div>
     <div class="block">
-      <p class="k">Person right now</p>
+      <p class="k">Person in view</p>
       <p id="person-line">No</p>
     </div>
     <div class="block log-block" id="log-block">
@@ -472,11 +461,6 @@ body {
 
   <footer id="dock">
     <div class="dock-row">
-      <div class="prior" id="prior">
-        <div><span>Sun 11</span><b>No data</b></div>
-        <div><span>Sat 10</span><b>No data</b></div>
-        <div><span>Fri 9</span><b>No data</b></div>
-      </div>
       <details class="diag" id="diag">
         <summary>Timing</summary>
         <ul class="ticks" id="ticks">
@@ -527,10 +511,10 @@ const STATES = {
     when: "Monday 12 October 2026 · 12:00:15 PM",
     band: "3/4", oz: 40, water: true,
     alarm: false, alarmAge: "for 0:15",
-    activity: "Idle", activityDetail: "level still 0:15",
+    activity: "Idle", activityDetail: "Steady for 0:15",
     person: false,
-    seen: row("0"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
-    monthly: "$0.00", logged: "Month · 1 day",
+    seen: row("0"), refills: row("0"), volume: row("0.0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Monthly estimate (1 day of data)",
     out15: "0", outToday: "0",
     unverified: false, stale: false,
     shots: [40, 40, 40, 40, 40, 40, 40, 40],
@@ -541,10 +525,10 @@ const STATES = {
     when: "Monday 12 October 2026 · 12:01:30 PM",
     band: "3/4", oz: 40, water: true,
     alarm: false, alarmAge: "for 1:30",
-    activity: "Idle", activityDetail: "level still 1:30",
+    activity: "Idle", activityDetail: "Steady for 1:30",
     person: true,
-    seen: row("1"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
-    monthly: "$0.00", logged: "Month · 1 day",
+    seen: row("1"), refills: row("0"), volume: row("0.0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Monthly estimate (1 day of data)",
     out15: "0", outToday: "0",
     unverified: false, stale: false,
     shots: [40, 40, 40, 40, 40, 40, 40, 40],
@@ -557,10 +541,10 @@ const STATES = {
     when: "Monday 12 October 2026 · 12:02:30 PM",
     band: "3/4", oz: 40, water: true,
     alarm: false, alarmAge: "for 2:30",
-    activity: "Idle", activityDetail: "level still 2:30",
+    activity: "Idle", activityDetail: "Steady for 2:30",
     person: false,
-    seen: row("1"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
-    monthly: "$0.00", logged: "Month · 1 day",
+    seen: row("1"), refills: row("0"), volume: row("0.0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Monthly estimate (1 day of data)",
     out15: "0", outToday: "0",
     unverified: false, stale: false,
     shots: [40, 40, 40, 40, 40, 40, 40, 40],
@@ -573,10 +557,10 @@ const STATES = {
     when: "Monday 12 October 2026 · 12:08:00 PM",
     band: "1/2", oz: 30, water: true,
     alarm: false, alarmAge: "for 8:00",
-    activity: "Brewing", activityDetail: "drop running 2:00",
+    activity: "Brewing", activityDetail: "Falling for 2:00",
     person: false,
-    seen: row("1"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
-    monthly: "$0.00", logged: "Month · 1 day",
+    seen: row("1"), refills: row("0"), volume: row("0.0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Monthly estimate (1 day of data)",
     out15: "10", outToday: "10",
     unverified: false, stale: false,
     shots: [40, 40, 40, 38, 36, 34, 32, 30],
@@ -590,10 +574,10 @@ const STATES = {
     when: "Monday 12 October 2026 · 12:12:00 PM",
     band: "Low", oz: 16, water: true,
     alarm: true, alarmAge: "for 0:15",
-    activity: "Brewing", activityDetail: "drop running 6:00",
+    activity: "Brewing", activityDetail: "Falling for 6:00",
     person: false,
-    seen: row("1"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
-    monthly: "$0.00", logged: "Month · 1 day",
+    seen: row("1"), refills: row("0"), volume: row("0.0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Monthly estimate (1 day of data)",
     out15: "24", outToday: "24",
     unverified: false, stale: false,
     shots: [30, 28, 26, 24, 22, 20, 18, 16],
@@ -607,10 +591,10 @@ const STATES = {
     when: "Monday 12 October 2026 · 12:18:00 PM",
     band: "Full", oz: 70, frameOz: 47.3, water: true,
     alarm: false, alarmAge: "for 0:15",
-    activity: "Idle", activityDetail: "level still 0:15",
+    activity: "Idle", activityDetail: "Steady for 0:15",
     person: false,
-    seen: row("2"), refills: row("1"), volume: row("54 fl oz"), bill: row("$5.40"),
-    monthly: "$162.00", logged: "Month · 1 day",
+    seen: row("2"), refills: row("1"), volume: row("54.0 fl oz"), bill: row("$5.40"),
+    monthly: "$162.00", logged: "Monthly estimate (1 day of data)",
     out15: "24", outToday: "24",
     unverified: false, stale: false,
     shots: [16, 16, 16, 16, 16, null, null, 47.3],
@@ -627,10 +611,10 @@ const STATES = {
     when: "Monday 12 October 2026 · 12:14:00 PM",
     band: "Full", oz: 60, water: true,
     alarm: false, alarmAge: "for 0:15",
-    activity: "Idle", activityDetail: "level still 0:15",
+    activity: "Idle", activityDetail: "Steady for 0:15",
     person: false,
-    seen: row("1"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
-    monthly: "$0.00", logged: "Month · 1 day",
+    seen: row("1"), refills: row("0"), volume: row("0.0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Monthly estimate (1 day of data)",
     out15: "24", outToday: "24",
     unverified: true, stale: false,
     shots: [16, 16, 16, 60, 60.4, 59.6, 60, 60],
@@ -645,10 +629,10 @@ const STATES = {
     when: "Monday 12 October 2026 · 12:09:00 PM",
     band: "1/2", oz: 34, water: false,
     alarm: false, alarmAge: "for 9:00",
-    activity: "Brewing", activityDetail: "drop running 2:00",
+    activity: "Brewing", activityDetail: "Falling for 2:00",
     person: false,
-    seen: row("1"), refills: row("0"), volume: row("0 fl oz"), bill: row("$0.00"),
-    monthly: "$0.00", logged: "Month · 1 day",
+    seen: row("1"), refills: row("0"), volume: row("0.0 fl oz"), bill: row("$0.00"),
+    monthly: "$0.00", logged: "Monthly estimate (1 day of data)",
     out15: "6", outToday: "6",
     unverified: false, stale: true,
     shots: [40, 38, 36, 34, null, null, null, null],
@@ -766,7 +750,7 @@ function show(key) {
   const model = document.getElementById("model-line");
   if (frame !== current.oz) {
     model.hidden = false;
-    model.textContent = "Model " + frame.toFixed(1) + " fl oz";
+    model.textContent = "Camera reads " + frame.toFixed(1) + " fl oz";
   } else {
     model.hidden = true;
   }
@@ -785,8 +769,8 @@ function show(key) {
 
   document.getElementById("unverified").hidden = !current.unverified;
   document.getElementById("stale-banner").hidden = !current.stale;
-  document.getElementById("out-15").textContent = current.out15;
-  document.getElementById("out-today").textContent = current.outToday;
+  document.getElementById("out-15").textContent = Number(current.out15).toFixed(1) + " fl oz";
+  document.getElementById("out-today").textContent = Number(current.outToday).toFixed(1) + " fl oz";
   document.getElementById("seen-today").textContent = current.seen[0];
   document.getElementById("refill-today").textContent = current.refills[0];
   document.getElementById("volume-today").textContent = current.volume[0];

@@ -17,7 +17,7 @@ import math
 import sqlite3
 import threading
 import urllib.parse
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from email.utils import formatdate, parsedate_to_datetime
 from enum import Enum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -43,10 +43,8 @@ _MONTHS = (
     "November",
     "December",
 )
-_SHORT = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-_CAPTIONS = ("-1:45", "-1:30", "-1:15", "-1:00", "-0:45", "-0:30", "-0:15", "Now")
-_STALE = "Stale. 4 ticks with no level."
-_UNVERIFIED = "Unverified rise. Bill unchanged."
+_STALE = "Reservoir not in view. Holding the last level."
+_UNVERIFIED = "Level jumped without a refill. Not billed. Confirming."
 _REVIEW = "Earlier frame. The numbers stay live."
 _DOT = "\u00b7"
 _EVENTS = 50
@@ -281,17 +279,11 @@ class _LogLine(NamedTuple):
     message: str
 
 
-class _Fill(NamedTuple):
-    """One fill event's coffee, in cents. Prior days only."""
-
-    day: date
-    cents: int
-
-
 class _Frame(NamedTuple):
-    """Basename of a JPEG in the frames directory. No slash."""
+    """Basename of a JPEG in the frames directory, and its mtime. No slash."""
 
     name: str
+    mtime: float
 
 
 class _Quiet(NamedTuple):
@@ -306,7 +298,6 @@ class _Shown(NamedTuple):
     live: _Live
     log: tuple[_LogLine, ...]
     logged_days: tuple[date, ...]
-    fills: tuple[_Fill, ...]
     frames: tuple[_Frame, ...]
 
 
@@ -490,14 +481,22 @@ def _frames(folder: Path) -> tuple[_Frame, ...]:
         found.append((path.stat().st_mtime, name))
     found.sort(key=lambda item: (item[0], item[1]))
     newest = found[-8:]
-    return tuple(_Frame(name) for _mtime, name in newest)
+    return tuple(_Frame(name, mtime) for mtime, name in newest)
 
 
-def _captions(count: int) -> tuple[str, ...]:
-    """Tail of `_CAPTIONS`. The last caption is Now. Zero files is ()."""
-    if count == 0:
+def _captions(frames: tuple[_Frame, ...]) -> tuple[str, ...]:
+    """How much older each frame is than the newest. The newest is Now. `-53 s`, then `-1:05`."""
+    if not frames:
         return ()
-    return _CAPTIONS[-count:]
+    newest = frames[-1].mtime
+    captions = []
+    for frame in frames[:-1]:
+        seconds = max(0, round(newest - frame.mtime))
+        if seconds < 60:
+            captions.append(f"-{seconds} s")
+        else:
+            captions.append(f"-{seconds // 60}:{seconds % 60:02d}")
+    return (*captions, "Now")
 
 
 def _tenths(value: float | None) -> int | None:
@@ -507,7 +506,7 @@ def _tenths(value: float | None) -> int | None:
 
 
 def _load(db: Path, frames: Path) -> _Quiet | _Shown:
-    """Parse one committed tick into a board. Five bounded statements, one read transaction."""
+    """Parse one committed tick into a board. Four bounded statements, one read transaction."""
     shots = _frames(frames)
     if not db.is_file():
         return _Quiet(shots)
@@ -541,12 +540,8 @@ def _load(db: Path, frames: Path) -> _Quiet | _Shown:
             if machine is None or reading is None:
                 return _Quiet(shots)
             tick_at = datetime.fromisoformat(str(reading["ts"]))
-            since = (tick_at.astimezone(_CHICAGO).date() - timedelta(days=3)).isoformat()
             events = conn.execute(
                 "SELECT ts, kind, message FROM event ORDER BY id DESC LIMIT ?", (_EVENTS,)
-            ).fetchall()
-            fill_rows = conn.execute(
-                "SELECT day, delta_oz FROM event WHERE kind = 'fill' AND day >= ?", (since,)
             ).fetchall()
             # One index seek per logged day, so the page never walks every reading.
             days = conn.execute(
@@ -600,13 +595,8 @@ def _load(db: Path, frames: Path) -> _Quiet | _Shown:
             _LogLine(datetime.fromisoformat(str(row["ts"])), str(row["kind"]), str(row["message"]))
             for row in events
         )
-        fills = tuple(
-            _Fill(date.fromisoformat(str(row["day"])), round(float(row["delta_oz"]) * 10))
-            for row in fill_rows
-            if row["delta_oz"] is not None
-        )
         logged = tuple(date.fromisoformat(str(row[0])) for row in days)
-        return _Shown(live, log, logged, fills, shots)
+        return _Shown(live, log, logged, shots)
     finally:
         conn.close()
 
@@ -620,10 +610,10 @@ def _band(booked: _Ounces) -> _Band:
 
 
 def _model_line(gauge: _Ounces | None, booked: _Ounces | None) -> str | None:
-    """`Model 47.3 fl oz` when both exist and the tenths differ. Otherwise hidden."""
+    """`Camera reads 47.3 fl oz` when both exist and the tenths differ. Otherwise hidden."""
     if gauge is None or booked is None or gauge.tenths == booked.tenths:
         return None
-    return "Model " + _one_decimal(gauge)
+    return "Camera reads " + _one_decimal(gauge)
 
 
 def _elapsed(start: datetime, end: datetime) -> str:
@@ -637,13 +627,13 @@ def _elapsed(start: datetime, end: datetime) -> str:
 
 
 def _detail(activity: _Activity, started: datetime, tick: datetime) -> str:
-    """Idle is `level still M:SS`. Brewing is `drop running M:SS`. Out is the elapsed time alone."""
+    """Idle is `Steady for M:SS`. Brewing is `Falling for M:SS`. Out is `Out for M:SS`."""
     span = _elapsed(started, tick)
     if activity is _Activity.idle:
-        return f"level still {span}"
+        return f"Steady for {span}"
     if activity is _Activity.brewing:
-        return f"drop running {span}"
-    return span
+        return f"Falling for {span}"
+    return f"Out for {span}"
 
 
 def _wall(at: datetime) -> _Wall:
@@ -657,25 +647,6 @@ def _wall(at: datetime) -> _Wall:
     clock = f"{hour12}:{local.minute:02d}:{local.second:02d} {suffix}"
     date_line = f"{_WEEKDAYS[local.weekday()]} {local.day} {_MONTHS[local.month - 1]} {local.year}"
     return _Wall(local.isoformat(timespec="seconds"), date_line, clock)
-
-
-def _prior(
-    tick_at: datetime,
-    logged_days: tuple[date, ...],
-    fills: tuple[_Fill, ...],
-) -> tuple[tuple[str, str], ...]:
-    """The three Chicago dates before the tick, newest first."""
-    day = tick_at.astimezone(_CHICAGO).date()
-    rows: list[tuple[str, str]] = []
-    for offset in (1, 2, 3):
-        earlier = day - timedelta(days=offset)
-        label = f"{_SHORT[earlier.weekday()]} {earlier.day}"
-        if earlier not in logged_days:
-            rows.append((label, "No data"))
-            continue
-        cents = sum(fill.cents for fill in fills if fill.day == earlier)
-        rows.append((label, _money(cents)))
-    return tuple(rows)
 
 
 def _money(cents: int) -> str:
@@ -883,7 +854,6 @@ def _html(
         person_html = '<p id="person-line"></p>'
         stale = False
         unverified = False
-        prior = ()
         log_html = ""
         timings = _timing_rows(None)
     else:
@@ -912,15 +882,15 @@ def _html(
             model_html = '<p class="model" id="model-line" hidden></p>'
         else:
             model_html = f'<p class="model" id="model-line">{_esc(model)}</p>'
-        out_15 = _amount(live.out_15m_tenths)
-        out_today = _amount(live.out_today_tenths)
+        out_15 = _one_decimal(_Ounces(live.out_15m_tenths))
+        out_today = _one_decimal(_Ounces(live.out_today_tenths))
         seen = str(live.seen_today)
         refills = str(live.refills_today)
-        volume = _amount(live.filled_tenths) + " fl oz"
+        volume = _one_decimal(_Ounces(live.filled_tenths))
         bill = _money(live.filled_tenths)
         count = len(board.logged_days)
         unit = "day" if count == 1 else "days"
-        logged = f"Month {_DOT} {count} {unit}"
+        logged = f"Monthly estimate ({count} {unit} of data)"
         monthly = _money(live.coffee_month_cents)
         alarm_on = live.alarm_on
         alarm_text = "On" if live.alarm_on else "Off"
@@ -934,7 +904,6 @@ def _html(
             person_html = '<p id="person-line">No</p>'
         stale = live.stale
         unverified = live.unverified
-        prior = _prior(live.tick_at, board.logged_days, board.fills)
         lines = []
         for line in board.log:
             lines.append(
@@ -951,9 +920,8 @@ def _html(
         classes.append("review")
     board_class = f' class="{" ".join(classes)}"' if classes else ""
     mark = "Earlier frame" if earlier else "Live"
-    prior_html = "".join(f"<div><span>{_esc(label)}</span><b>{_esc(text)}</b></div>" for label, text in prior)
     tick_html = "".join(f"<li><span>{_esc(label)}</span><b>{_esc(value)}</b></li>" for label, value in timings)
-    captions = _captions(len(frames))
+    captions = _captions(frames)
     strip = []
     for index, (frame, caption) in enumerate(zip(frames, captions)):
         current = ' aria-current="page"' if index == selected else ""
@@ -1027,12 +995,12 @@ def _html(
         f"{gauge_html}\n"
         "</div>\n"
         '<dl class="rows">\n'
-        f'<div><dt>15 min out</dt><dd id="out-15">{_esc(out_15)}</dd></div>\n'
-        f'<div><dt>Today out</dt><dd id="out-today">{_esc(out_today)}</dd></div>\n'
-        f'<div><dt>Seen today</dt><dd id="seen-today">{_esc(seen)}</dd></div>\n'
-        f'<div><dt>Refills</dt><dd id="refill-today">{_esc(refills)}</dd></div>\n'
-        f'<div><dt>Filled today</dt><dd id="volume-today">{_esc(volume)}</dd></div>\n'
-        f'<div><dt>Coffee today</dt><dd id="bill-today">{_esc(bill)}</dd></div>\n'
+        f'<div><dt>Used, last 15 min</dt><dd id="out-15">{_esc(out_15)}</dd></div>\n'
+        f'<div><dt>Used today</dt><dd id="out-today">{_esc(out_today)}</dd></div>\n'
+        f'<div><dt>People seen today</dt><dd id="seen-today">{_esc(seen)}</dd></div>\n'
+        f'<div><dt>Refills today</dt><dd id="refill-today">{_esc(refills)}</dd></div>\n'
+        f'<div><dt>Refilled today</dt><dd id="volume-today">{_esc(volume)}</dd></div>\n'
+        f'<div><dt>Refill bill today</dt><dd id="bill-today">{_esc(bill)}</dd></div>\n'
         f'<div><dt id="logged-days">{_esc(logged)}</dt><dd id="monthly">{_esc(monthly)}</dd></div>\n'
         "</dl>\n"
         "</section>\n"
@@ -1046,7 +1014,7 @@ def _html(
         "</div>\n"
         '<section id="status" aria-label="Alarm and activity">\n'
         '<div class="block" id="alarm-block">\n'
-        '<p class="k">Alarm</p>\n'
+        '<p class="k">Refill alarm</p>\n'
         f'<p class="big" id="alarm-value">{_esc(alarm_text)}</p>\n'
         f'<p class="sub" id="alarm-age">{_esc(alarm_age)}</p>\n'
         "</div>\n"
@@ -1056,7 +1024,7 @@ def _html(
         f'<p class="sub" id="activity-detail">{_esc(activity_detail)}</p>\n'
         "</div>\n"
         "<div class=\"block\">\n"
-        '<p class="k">Person right now</p>\n'
+        '<p class="k">Person in view</p>\n'
         f"{person_html}\n"
         "</div>\n"
         '<div class="block log-block" id="log-block">\n'
@@ -1066,7 +1034,6 @@ def _html(
         "</section>\n"
         '<footer id="dock">\n'
         '<div class="dock-row">\n'
-        f'<div class="prior" id="prior">{prior_html}</div>\n'
         '<details class="diag" id="diag">\n'
         "<summary>Timing</summary>\n"
         f'<ul class="ticks" id="ticks">{tick_html}</ul>\n'

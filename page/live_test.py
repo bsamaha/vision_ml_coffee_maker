@@ -117,16 +117,13 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(node(page, "ounces"), "40.0 fl oz")
         self.assertEqual(node(page, "alarm-value"), "Off")
         self.assertEqual(node(page, "activity-value"), "Idle")
-        self.assertEqual(node(page, "activity-detail"), "level still 0:00")
-        self.assertEqual(node(page, "out-15"), "0")
-        self.assertEqual(node(page, "out-today"), "0")
-        self.assertEqual(node(page, "logged-days"), "Month \u00b7 1 day")
+        self.assertEqual(node(page, "activity-detail"), "Steady for 0:00")
+        self.assertEqual(node(page, "out-15"), "0.0 fl oz")
+        self.assertEqual(node(page, "out-today"), "0.0 fl oz")
+        self.assertEqual(node(page, "logged-days"), "Monthly estimate (1 day of data)")
         self.assertIn("Monday 12 October 2026 \u00b7 12:00:15 PM", block(page, "when", "</p>"))
-        prior = block(page, "prior", 'id="ticks"')
-        self.assertIn("Sun 11", prior)
-        self.assertIn("Sat 10", prior)
-        self.assertIn("Fri 9", prior)
-        self.assertEqual(prior.count("No data"), 3)
+        self.assertNotIn('id="prior"', page)
+        self.assertNotIn("No data", page)
         self.assertNotIn("120 ms", block(page, "ticks", "</ul>"))
         self.assertNotIn("Preview, not on the Pi", page)
         self.assertNotIn("data-state=", page)
@@ -184,11 +181,11 @@ class LiveTests(unittest.TestCase):
         )
         self.assertEqual(node(page, "ounces"), "70.0 fl oz")
         self.assertNotIn("hidden", opening(page, "model-line"))
-        self.assertEqual(node(page, "model-line"), "Model 47.3 fl oz")
-        self.assertEqual(node(page, "out-15"), "4")
-        self.assertEqual(node(page, "out-today"), "4")
+        self.assertEqual(node(page, "model-line"), "Camera reads 47.3 fl oz")
+        self.assertEqual(node(page, "out-15"), "4.0 fl oz")
+        self.assertEqual(node(page, "out-today"), "4.0 fl oz")
         self.assertEqual(node(page, "bill-today"), "$5.40")
-        self.assertEqual(node(page, "volume-today"), "54 fl oz")
+        self.assertEqual(node(page, "volume-today"), "54.0 fl oz")
 
     def test_stale_banner_after_four_misses(self):
         folder = self.folder()
@@ -207,10 +204,10 @@ class LiveTests(unittest.TestCase):
         )
         page = self.page(path, frames)
         self.assertNotIn("hidden", opening(page, "stale-banner"))
-        self.assertEqual(node(page, "stale-banner"), "Stale. 4 ticks with no level.")
+        self.assertEqual(node(page, "stale-banner"), "Reservoir not in view. Holding the last level.")
         self.assertEqual(node(page, "ounces"), "34.0 fl oz")
-        self.assertEqual(node(page, "out-15"), "6")
-        self.assertEqual(node(page, "out-today"), "6")
+        self.assertEqual(node(page, "out-15"), "6.0 fl oz")
+        self.assertEqual(node(page, "out-today"), "6.0 fl oz")
         self.assertNotIn("Stale", block(page, "events", "</ol>"))
 
     def test_quiet_jump_holds_the_booked_ounces(self):
@@ -219,7 +216,7 @@ class LiveTests(unittest.TestCase):
         self.fill(path, [("12:00", 40, False), ("12:01", 48, False)])
         page = self.page(path, frames)
         self.assertNotIn("hidden", opening(page, "unverified"))
-        self.assertEqual(node(page, "unverified"), "Unverified rise. Bill unchanged.")
+        self.assertEqual(node(page, "unverified"), "Level jumped without a refill. Not billed. Confirming.")
         self.assertEqual(node(page, "ounces"), "40.0 fl oz")
 
     def test_eight_frames_link_to_an_earlier_frame_by_name(self):
@@ -248,7 +245,7 @@ class LiveTests(unittest.TestCase):
             captions = re.findall(r'class="cap">([^<]*)', strip)
             self.assertEqual(
                 captions,
-                ["-1:45", "-1:30", "-1:15", "-1:00", "-0:45", "-0:30", "-0:15", "Now"],
+                ["-7 s", "-6 s", "-5 s", "-4 s", "-3 s", "-2 s", "-1 s", "Now"],
             )
             self.assertEqual(captions[-1], "Now")
             self.assertEqual(
@@ -314,7 +311,7 @@ class LiveTests(unittest.TestCase):
         self.assertNotIn("40.0 fl oz", without_scripts(page))
         self.assertIn("<span>Over 15 s</span><b>0</b>", block(page, "ticks", "</ul>"))
         self.assertNotIn("<li", block(page, "events", "</ol>"))
-        self.assertNotIn("Sun 11", block(page, "prior", 'id="ticks"'))
+        self.assertNotIn('id="prior"', page)
         self.assertNotIn("Monday", block(page, "when", "</p>"))
         self.assertNotIn("Preview, not on the Pi", page)
         self.assertNotIn("data-state=", page)
@@ -402,6 +399,11 @@ class LiveTests(unittest.TestCase):
         self.assertIn('<li class="ev-person">', events)
         self.assertIn("Line 59.", events)
         self.assertNotIn("Line 9.", events)
+
+    def test_captions_are_each_frame_age_against_the_newest(self):
+        frames = tuple(live._Frame(f"{index}.jpg", 1000.0 + offset) for index, offset in enumerate((0, 7.4, 52.6, 67.5)))
+        self.assertEqual(live._captions(frames), ("-1:08", "-1:00", "-15 s", "Now"))
+        self.assertEqual(live._captions(()), ())
 
     def test_elapsed_shows_hours(self):
         start = at("09:00")
