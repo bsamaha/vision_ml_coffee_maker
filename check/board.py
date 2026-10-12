@@ -31,6 +31,10 @@ CHICAGO = ZoneInfo("America/Chicago")
 BOARD_FPS = 2
 # This long with no new frame means the camera stopped.
 CAMERA_QUIET_S = 10
+# Shortest gap between tick starts. The brew rule needs two ticks in a row that each fall
+# more than 0.5 fl oz, and a Classic brew falls about 5 fl oz a minute. At the ~3.9 s the
+# models take on their own, a brew falls under 0.5 a tick and never reads as Brewing.
+MIN_TICK_S = 7.5
 
 
 class Elapsed(NamedTuple):
@@ -275,7 +279,12 @@ def main() -> None:
             return
         last_seq = -1
         waiting_since = time.monotonic()
+        next_tick = 0.0
         while True:
+            early = next_tick - time.monotonic()
+            if early > 0:
+                time.sleep(min(early, 0.2))
+                continue
             grab = copy_jpeg()
             if grab is None or grab.seq == last_seq:
                 quiet = time.monotonic() - waiting_since
@@ -286,6 +295,7 @@ def main() -> None:
                 continue
             last_seq = grab.seq
             waiting_since = time.monotonic()
+            next_tick = waiting_since + MIN_TICK_S
             try:
                 passes = detect(models, grab.jpeg)
                 tick(
