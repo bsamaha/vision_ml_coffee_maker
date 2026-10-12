@@ -54,7 +54,7 @@ A camera is the better choice for three reasons:
 Every few minutes, the site computer takes a frame and runs a small Roboflow model on it, such as RF-DETR Nano. The model does two jobs:
 
 - **Tank level.** The model finds each tank and the liquid line inside it. The level is the line's height as a fraction of the tank's height, and each tank's strapping table (its chart of height to gallons) converts that to gallons. This depends on seeing the liquid. Many chemical tanks are translucent poly, where the liquid line shows through the wall. Opaque tanks need a sight gauge the camera can see.
-- **People.** The model detects any person in the frame. It logs that someone was there, not who they are. A person with the tank still in the picture is a visit, and that visit does not bill. On this proof a fill is the reservoir taken out of the frame and brought back at least 3.5 fl oz higher. The page books 70 fl oz. The bill is 70 minus the ounces saved when it left. On a pad the tank stays put. The ticket is checked against the gallons delivered while a person was there. A half-fill from the 25% line on the 335-gallon tank is about $2,760 at about $22 a gallon. That dollar stays off the kitchen screen. The screen shows the coffee bill.
+- **People.** The model detects any person in the frame. It logs that someone was there, not who they are. A person with the tank still in the picture is a visit, and that visit does not bill. On a pad the tank stays put, so a delivery is a rise in level while a person is there, and the ticket is checked against the gallons that rise shows. A half-fill from the 25% line on the 335-gallon tank is about $2,760 at about $22 a gallon.
 
 The same frames show whether the pumpjack is moving, by comparing consecutive frames. Spills can be added later as another class, trained on images from the deployed cameras.
 
@@ -64,7 +64,7 @@ In the field the models and the gauge run as one Roboflow Workflow on Roboflow I
 
 The camera keeps a continuous log. Each entry is a time, the booked level, and whether a person is present.
 
-On this proof a fill looks like this:
+In the kitchen proof the tank is a coffee maker's reservoir, which is lifted off to be refilled, so a fill looks like this:
 
 | Moment | What the frame shows | Booked level |
 |---|---|---|
@@ -78,6 +78,18 @@ The model reading is stored beside the 70. The coffee bill uses 70 minus the sav
 - **Anomalies.** A day with little or no drop means the treatment may have stopped. A low level means a refill is due. A rise while nobody took the tank updates the level after the quiet-jump hold, and it does not bill.
 
 The photos and the log belong to Company X. The model runs on the site computer. On this proof the newest 8 frames stay on the Pi, each with the boxes the models found, and the board draws the reservoir, water line, and person boxes over the photo. The well product would send the log and the fill photos.
+
+### The insights
+
+| Insight | On the proof | On a pad |
+|---|---|---|
+| Tank level, with photo evidence | Live level, a tank gauge, and the model's boxes on the photo | Level per tank, in gallons from its strapping table |
+| Refill due | The refill alarm under 25% | An alert before the well goes untreated |
+| Consumption | Used in the last 15 minutes and today, the use rate, and the time to empty | The baseline that shows a stopped pump as a rate gone flat, and the next delivery date |
+| Visits | Every person logged with a time and a photo | A visit record for every pumper and vendor |
+| Deliveries | Each refill booked with its bill | Each ticket checked against a fill event |
+
+On the proof these appear on the board, the operator screen. Sending them out, as an alert to a phone or into the operator's SCADA system or historian over MQTT, is the field design and is not built in the proof.
 
 ### How long a well can go untreated
 
@@ -99,7 +111,7 @@ A dry tank is easy to catch, because the level is low. A stopped pump is harder,
 
 `days to detect = level reading error (gallons) ÷ daily use (gallons a day)`
 
-The reading error hasn't been measured yet, so the useful question is how accurate the camera needs to be. The target is **about 3% of the tank's height**. On the fast well's 335-gallon tank, which uses about 0.84 gallons a day, that is about 10 gallons, so a stopped pump is caught in about 12 days and the wall loss is held to about 2%. That is far better than the days or weeks an interruption can last today. On the slow well, which uses about 0.02 gallons a day, no realistic camera accuracy catches a stopped pump in a useful time.
+The field reading error still has to be measured on real tanks. The kitchen proof measured 2.4% of full between 4 and 10 cups (see the proof of concept below), which shows the method can get there, but a clear reservoir indoors is the easy case. So the useful question is how accurate the camera needs to be. The target is **about 3% of the tank's height**. On the fast well's 335-gallon tank, which uses about 0.84 gallons a day, that is about 10 gallons, so a stopped pump is caught in about 12 days and the wall loss is held to about 2%. That is far better than the days or weeks an interruption can last today. On the slow well, which uses about 0.02 gallons a day, no realistic camera accuracy catches a stopped pump in a useful time.
 
 Zero consumption isn't always a fault. When a well is shut in, its chemical pump often stops too. On a pumpjack well, the same camera can see whether the pumpjack is moving and suppress the alert while the well is down. On other wells, the well's running status has to come from the operator's SCADA system.
 
@@ -144,7 +156,7 @@ Notes on these costs:
 | Roboflow inference on the site's own hardware | Free | [Roboflow pricing](https://roboflow.com/pricing) |
 | **Total** | **~$25 a year** | |
 
-The model runs on the site's own computer, so running it uses no Roboflow credits. The log goes straight into the operator's own systems, such as its SCADA system or data historian over MQTT, so no Roboflow-hosted storage is needed either.
+The model runs on the site's own computer, so running it uses no Roboflow credits. In the field design the log goes into the operator's own systems, such as its SCADA system or data historian over MQTT, so no Roboflow-hosted storage is needed either.
 
 ### Roboflow costs for the fleet
 
@@ -203,9 +215,9 @@ These add value, but they can't be measured before the cameras go up, so they're
 
 ## The proof of concept
 
-The lab setup is the Ninja reservoir, not a small copy of the well. A brew empties that reservoir. On a pad the pump does not. The screen shows the booked level, ounces used in the last 15 minutes and today, the use rate and time to empty, person visits, refills, a coffee bill, and a refill alarm, with the model's boxes drawn over the camera photo and the Pi's own CPU, temperature, memory, and model times underneath.
+The lab setup is a Ninja coffee maker's 70 fl oz reservoir, not a small copy of the well. A brew empties that reservoir, and a pad's pump does not, so the kitchen shows the mechanics: reading the level, logging visits, booking refills, and raising the alarm. It does not show field accuracy. The live demo and its talk track are in [presentation.md](presentation.md).
 
-The kitchen reports a measured error. It does not have a pass line. The error is the average absolute difference, in percent of full, on cup-line fills at or above 25%. Under 25% full (17.5 fl oz on this 70 fl oz reservoir) is the refill alarm. Both Used tiles at 0 are normal and are not the alarm. The 3% field target above is the well, and it is not the kitchen gate.
+The error is the average absolute difference, in percent of full, on cup-line fills at or above 25%. Under 25% full is the refill alarm. There is no pass line. The 3% field target above is for the well, not the kitchen.
 
 The accuracy experiment recorded three rounds of 4, 6, 8, 10, and 14 cups. Each round was scored with a cup table built from the other two, so no round grades itself:
 
@@ -214,18 +226,9 @@ The accuracy experiment recorded three rounds of 4, 6, 8, 10, and 14 cups. Each 
 
 The ledger is built around that weakness. A refill books 70 fl oz whatever the model reads, the highest settled reading after the refill becomes the full mark, and later readings are scaled to it, so an empty tank still reaches 0 and the alarm still fires. On the well, a tank that sits full after delivery is the same case, and a strapping table calibrated on site at the top of the tank would be part of commissioning.
 
-The demo shows:
-
-- **The measured error** on fills at or above 25% full.
-- **A person visit** with the reservoir still in the picture, logged on its own, with the person box on the photo. That visit does not bill.
-- **A refill.** The reservoir leaves the frame and comes back at least 3.5 fl oz higher. The page books 70 fl oz. The bill is 70 minus the ounces saved when it left, at $0.50 a cup. The model reading stays beside the 70.
-- **Consumption.** A brew reads as Brewing within about 40 seconds of the level starting to fall, Used today follows the drop, and the use rate and time to empty update as it goes.
-- **The refill alarm** once a brew drops the reservoir under 17.5 fl oz.
-- **The photos** stay on the Pi. The page shows the newest 8 frames, each with its detection boxes.
-- **The Roboflow Workflow on the edge device.** The tank model, the person model, and the TankGauge custom block, run with Roboflow Inference on a Raspberry Pi 4's CPU: about 1.6 to 1.9 seconds per model, a reading every 7.5 seconds, at about 50 to 60% CPU and 62 °C. The same Workflow is open in the Roboflow app.
-- **Agreement between two runtimes.** On 348 saved rehearsal frames, the Workflow and the earlier in-process models agreed on the gauge within 1 fl oz on 329 of 336 readings, and on every person flag. Where they disagreed by more, on two frames, the Workflow was right.
-
 In the 11 October rehearsal a full tank was taken, refilled, and brewed to empty. The board booked the refill at $7.00, showed Brewing for the whole brew, raised the alarm at 17.4 fl oz, and ended at 0 fl oz with 70.0 fl oz used, exactly what went in.
+
+The models run as a Roboflow Workflow with Roboflow Inference on a Raspberry Pi 4's CPU: about 1.6 to 1.9 seconds per model, a reading every 7.5 seconds, at about 50 to 60% CPU and 62 °C. On 348 saved rehearsal frames, the Workflow agreed with the earlier in-process models within 1 fl oz on 329 of 336 readings and on every person flag, and where they differed by more, the Workflow was right.
 
 A clear reservoir indoors will read more cleanly than a tank outdoors. Outdoor accuracy, summer heat, and uptime on solar still have to be confirmed on real tanks. The Pi in this kitchen already reached 79 °C at full load indoors before its camera feed was trimmed, so heat in a Permian enclosure is a real design input.
 
