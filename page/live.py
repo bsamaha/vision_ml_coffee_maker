@@ -144,8 +144,6 @@ _PHOTO = """
 .overlay .surface { stroke: #fff1dc; stroke-width: 3; vector-effect: non-scaling-stroke; }
 .overlay .person rect { stroke: var(--ok); fill: rgba(63, 208, 127, .07); }
 .overlay .person text { fill: var(--ok); }
-.overlay .other rect { stroke: rgba(200, 206, 214, .5); stroke-dasharray: 6 5; }
-.overlay .other text { fill: rgba(220, 225, 231, .7); font-size: 22px; }
 .overlay .spare rect { stroke-dasharray: 4 4; opacity: .55; }
 .overlay .spare text { opacity: .55; }
 #board.no-boxes .overlay { display: none; }
@@ -791,22 +789,21 @@ def _overlay(data: dict) -> tuple[str, float, float]:
     reservoir = None
     shapes: list[str] = []
     labels: list[str] = []
-    order = {"other": 0, "person": 1, "reservoir": 2, "liquid": 3}
-
-    def kind(name: str) -> str:
-        return {"Reservoir": "reservoir", "liquid-level": "liquid", "person": "person"}.get(name, "other")
-
-    boxes.sort(key=lambda box: order[kind(str(box.get("name", "")))])
+    # Only the classes the board reads. The person model's other COCO classes stay in the JSON.
+    kinds = {"person": "person", "Reservoir": "reservoir", "liquid-level": "liquid"}
+    order = list(kinds)
+    boxes = [box for box in boxes if isinstance(box.get("name"), str) and box["name"] in kinds]
+    boxes.sort(key=lambda box: order.index(box["name"]))
     for box in boxes:
-        name = str(box.get("name", ""))
+        name = str(box["name"])
         x0 = _number(box.get("x0"), 0)
         y0 = _number(box.get("y0"), 0)
         x1 = _number(box.get("x1"), x0)
         y1 = _number(box.get("y1"), y0)
         score = _number(box.get("score"), 0)
         used = box.get("used") is True
-        group = kind(name)
-        classes = group if used or group == "other" else f"{group} spare"
+        group = kinds[name]
+        classes = group if used else f"{group} spare"
         if group == "reservoir" and used:
             reservoir = (x0, x1)
         text = f"{name} {score:.2f}"

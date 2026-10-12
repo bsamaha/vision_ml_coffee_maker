@@ -345,9 +345,9 @@ class LiveTests(unittest.TestCase):
         self.assertIn("Water line 0.88 \u00b7 40.2 fl oz \u00b7 57%", overlay)
         self.assertIn('class="surface" x1="602.0" x2="698.0" y1="330.0" y2="330.0"', overlay)
         self.assertIn("person 0.71", overlay)
-        self.assertIn('<g class="other"><rect x="900.0"', overlay)
-        self.assertIn("&lt;b&gt; 0.00", overlay)
-        self.assertNotIn("<b>", overlay)
+        self.assertNotIn("chair", overlay)
+        self.assertNotIn("900.0", overlay)
+        self.assertNotIn("&lt;b&gt;", overlay)
         self.assertIn('aria-pressed="true"', opening(page, "boxes-toggle"))
         self.assertIn("aspect-ratio: 1280 / 720", block(page, "scene", 'id="frame"'))
 
