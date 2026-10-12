@@ -4,6 +4,7 @@
     python page/live_test.py
 """
 
+import json
 import os
 import re
 import sys
@@ -288,6 +289,7 @@ class LiveTests(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as cached:
                 urllib.request.urlopen(request, timeout=5)
             self.assertEqual(cached.exception.code, 304)
+            cached.exception.close()
             os.utime(frames / "shot-0.jpg", (base + 100, base + 100))
             with urllib.request.urlopen(request, timeout=5) as resp:
                 self.assertEqual(resp.status, 200)
@@ -317,6 +319,49 @@ class LiveTests(unittest.TestCase):
         self.assertNotIn("Preview, not on the Pi", page)
         self.assertNotIn("data-state=", page)
         self.assertNotIn("120 ms", block(page, "ticks", "</ul>"))
+
+    def test_saved_boxes_draw_over_the_photo(self):
+        folder = self.folder()
+        path, frames = self.database(folder)
+        self.fill(path, [("12:00", 40, False)])
+        (frames / "00000001.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+        detections = {
+            "width": 1280,
+            "height": 720,
+            "gauge_oz": 40.2,
+            "boxes": [
+                {"name": "Reservoir", "score": 0.93, "x0": 600, "y0": 200, "x1": 700, "y1": 500, "used": True},
+                {"name": "liquid-level", "score": 0.88, "x0": 602, "y0": 330, "x1": 698, "y1": 500, "used": True},
+                {"name": "person", "score": 0.71, "x0": 10, "y0": 20, "x1": 300, "y1": 700, "used": True},
+                {"name": "chair", "score": 0.6, "x0": 900, "y0": 400, "x1": 1000, "y1": 600, "used": False},
+                {"name": "<b>", "score": "bad", "x0": None, "used": False},
+            ],
+        }
+        (frames / "00000001.json").write_text(json.dumps(detections), encoding="utf-8")
+        page = self.page(path, frames)
+        overlay = block(page, "overlay", "</svg>")
+        self.assertIn('viewBox="0 0 1280 720"', overlay)
+        self.assertIn("Reservoir 0.93", overlay)
+        self.assertIn("Water line 0.88 \u00b7 40.2 fl oz \u00b7 57%", overlay)
+        self.assertIn('class="surface" x1="602.0" x2="698.0" y1="330.0" y2="330.0"', overlay)
+        self.assertIn("person 0.71", overlay)
+        self.assertIn('<g class="other"><rect x="900.0"', overlay)
+        self.assertIn("&lt;b&gt; 0.00", overlay)
+        self.assertNotIn("<b>", overlay)
+        self.assertIn('aria-pressed="true"', opening(page, "boxes-toggle"))
+        self.assertIn("aspect-ratio: 1280 / 720", block(page, "scene", 'id="frame"'))
+
+    def test_a_frame_without_boxes_has_no_overlay(self):
+        folder = self.folder()
+        path, frames = self.database(folder)
+        self.fill(path, [("12:00", 40, False)])
+        (frames / "00000001.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+        page = self.page(path, frames)
+        self.assertNotIn('id="overlay"', page)
+        self.assertNotIn('id="boxes-toggle"', page)
+        (frames / "00000001.json").write_text("not json", encoding="utf-8")
+        page = self.page(path, frames)
+        self.assertNotIn('id="overlay"', page)
 
     def test_board_error_file_shows_a_flag(self):
         folder = self.folder()

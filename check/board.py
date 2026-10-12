@@ -36,6 +36,31 @@ class Elapsed(NamedTuple):
     person_ms: int
 
 
+def detections(
+    boxes: Sequence[sight.Box], seen: sight.Seen, size: tuple[int, int]
+) -> dict:
+    """What the page draws over this frame. Coordinates are pixels of the saved JPEG."""
+    used = set(sight.chosen(boxes))
+    return {
+        "width": size[0],
+        "height": size[1],
+        "gauge_oz": seen.gauge_oz,
+        "boxes": [
+            {
+                "name": box.name,
+                "score": round(box.score, 3),
+                "x0": round(box.x0, 1),
+                "y0": round(box.y0, 1),
+                "x1": round(box.x1, 1),
+                "y1": round(box.y1, 1),
+                "used": box in used,
+            }
+            for box in boxes
+            if box.name != "__background__"
+        ],
+    }
+
+
 def tick(
     db: sqlite3.Connection,
     frames: Path,
@@ -43,6 +68,7 @@ def tick(
     boxes: Sequence[sight.Box],
     at: datetime,
     elapsed: Elapsed = Elapsed(0, 0, 0),
+    size: tuple[int, int] = (1280, 720),
 ) -> ledger.Applied:
     started = time.perf_counter()
     seen = sight.seen(boxes)
@@ -58,7 +84,7 @@ def tick(
         rss_mb=None,
         temp_c=None,
     )
-    return loop.record(db, frames, jpeg, one)
+    return loop.record(db, frames, jpeg, one, detections(boxes, seen, size))
 
 
 def main() -> None:
@@ -78,6 +104,7 @@ def main() -> None:
         boxes: tuple[sight.Box, ...]
         tank_ms: int
         person_ms: int
+        size: tuple[int, int]
 
     def load() -> Models:
         import accuracy
@@ -174,7 +201,8 @@ def main() -> None:
                 if raw is not None:
                     person_boxes = boxes_from(person_out, raw)
 
-        return Passes(tank_boxes + person_boxes, tank_ms, person_ms)
+        height, width = frame.shape[:2]
+        return Passes(tank_boxes + person_boxes, tank_ms, person_ms, (int(width), int(height)))
 
     root = Path(__file__).resolve().parent.parent
     db_path = root / "learn" / "tank.sqlite"
@@ -238,6 +266,7 @@ def main() -> None:
                         tank_ms=passes.tank_ms,
                         person_ms=passes.person_ms,
                     ),
+                    passes.size,
                 )
             except Exception as error:
                 traceback.print_exc()

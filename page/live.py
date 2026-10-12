@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import functools
 import html
+import json
+import math
 import sqlite3
 import threading
 import urllib.parse
@@ -89,12 +91,26 @@ _SCRIPT = f"""
       }}
       const nextDiag = document.getElementById("diag");
       if (nextDiag) nextDiag.open = open;
+      boxes();
     }} catch (error) {{
       return;
     }} finally {{
       age();
     }}
   }}
+  function boxes() {{
+    const off = localStorage.getItem("detections") === "off";
+    document.getElementById("board").classList.toggle("no-boxes", off);
+    const button = document.getElementById("boxes-toggle");
+    if (button) button.setAttribute("aria-pressed", off ? "false" : "true");
+  }}
+  document.addEventListener("click", function (event) {{
+    if (!event.target.closest("#boxes-toggle")) return;
+    const off = localStorage.getItem("detections") === "off";
+    localStorage.setItem("detections", off ? "on" : "off");
+    boxes();
+  }});
+  boxes();
   age();
   setInterval(age, 1000);
   setInterval(poll, {_POLL_S * 1000});
@@ -102,15 +118,58 @@ _SCRIPT = f"""
 """
 _ERROR_FILE = "board-error.txt"
 _PHOTO = """
-#frame {
-  position: relative;
-  height: 100%;
-  width: auto;
-  max-width: 100%;
+#scene { container-type: size; }
+.shot { position: relative; flex: none; }
+.shot #frame {
   display: block;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
   border-radius: 10px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, .6);
+}
+.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  font: 700 30px ui-sans-serif, system-ui, sans-serif;
+}
+.overlay rect { fill: none; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.overlay text { paint-order: stroke; stroke: rgba(0, 0, 0, .85); stroke-width: 7px; stroke-linejoin: round; }
+.overlay .reservoir rect { stroke: var(--info); fill: rgba(98, 172, 255, .06); }
+.overlay .reservoir text { fill: var(--info); }
+.overlay .liquid rect { stroke: var(--crema); fill: rgba(219, 168, 110, .16); }
+.overlay .liquid text { fill: #ffe2bf; }
+.overlay .surface { stroke: #fff1dc; stroke-width: 3; vector-effect: non-scaling-stroke; }
+.overlay .person rect { stroke: var(--ok); fill: rgba(63, 208, 127, .07); }
+.overlay .person text { fill: var(--ok); }
+.overlay .other rect { stroke: rgba(200, 206, 214, .5); stroke-dasharray: 6 5; }
+.overlay .other text { fill: rgba(220, 225, 231, .7); font-size: 22px; }
+.overlay .spare rect { stroke-dasharray: 4 4; opacity: .55; }
+.overlay .spare text { opacity: .55; }
+#board.no-boxes .overlay { display: none; }
+.boxes-toggle {
+  position: absolute;
+  z-index: 3;
+  top: 24px;
+  right: 24px;
+  padding: 7px 12px;
+  border: 1px solid rgba(98, 172, 255, .45);
+  border-radius: 999px;
+  background: rgba(10, 14, 20, .8);
+  color: #cfe4ff;
+  font: 700 11px/1 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.boxes-toggle[aria-pressed="false"] { border-color: var(--line); color: var(--muted); }
+#board-error { top: 64px; }
+@media (max-width: 860px) {
+  #scene { container-type: inline-size; }
+  .shot { width: 100% !important; }
+  .boxes-toggle { top: 16px; right: 16px; }
 }
 #frame[hidden],
 #hero[hidden] {
@@ -286,7 +345,8 @@ class _Handler(BaseHTTPRequestHandler):
             board = _load(server.db, server.frames)
             raw = urllib.parse.parse_qs(parsed.query, keep_blank_values=True).get("frame", [None])[0]
             selected = _choice(board.frames, raw)
-            body = _html(board, selected, _board_error(server.error)).encode("utf-8")
+            boxes = None if selected is None else _detections(server.frames, board.frames[selected].name)
+            body = _html(board, selected, _board_error(server.error), detections=boxes).encode("utf-8")
             self._send(200, body, "text/html; charset=utf-8", {"Cache-Control": "no-store"})
             return
         if parsed.path.startswith("/frame/"):
@@ -706,6 +766,74 @@ def _src(name: str) -> str:
     return "/frame/" + urllib.parse.quote(name, safe="")
 
 
+def _detections(folder: Path, name: str) -> dict | None:
+    """The boxes the board saved beside this frame, or None for a frame without them."""
+    try:
+        data = json.loads((folder / name).with_suffix(".json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _number(value: object, fallback: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return fallback
+    return float(value)
+
+
+def _overlay(data: dict) -> tuple[str, float, float]:
+    """SVG in the frame's pixel space, plus that frame's width and height."""
+    width = _number(data.get("width"), 1280) or 1280
+    height = _number(data.get("height"), 720) or 720
+    raw = data.get("boxes")
+    boxes = [box for box in raw if isinstance(box, dict)] if isinstance(raw, list) else []
+    gauge = data.get("gauge_oz")
+    reservoir = None
+    shapes: list[str] = []
+    labels: list[str] = []
+    order = {"other": 0, "person": 1, "reservoir": 2, "liquid": 3}
+
+    def kind(name: str) -> str:
+        return {"Reservoir": "reservoir", "liquid-level": "liquid", "person": "person"}.get(name, "other")
+
+    boxes.sort(key=lambda box: order[kind(str(box.get("name", "")))])
+    for box in boxes:
+        name = str(box.get("name", ""))
+        x0 = _number(box.get("x0"), 0)
+        y0 = _number(box.get("y0"), 0)
+        x1 = _number(box.get("x1"), x0)
+        y1 = _number(box.get("y1"), y0)
+        score = _number(box.get("score"), 0)
+        used = box.get("used") is True
+        group = kind(name)
+        classes = group if used or group == "other" else f"{group} spare"
+        if group == "reservoir" and used:
+            reservoir = (x0, x1)
+        text = f"{name} {score:.2f}"
+        if group == "liquid" and used and isinstance(gauge, (int, float)):
+            text = f"Water line {score:.2f} \u00b7 {gauge:.1f} fl oz \u00b7 {gauge / 70 * 100:.0f}%"
+        label_y = max(y0 - 10, 28)
+        if group == "liquid":
+            label_y = y0 + 34
+        shapes.append(
+            f'<g class="{classes}"><rect x="{x0:.1f}" y="{y0:.1f}" '
+            f'width="{max(x1 - x0, 0):.1f}" height="{max(y1 - y0, 0):.1f}" rx="4"/></g>'
+        )
+        if group == "liquid" and used:
+            shapes.append(f'<line class="surface" x1="{x0:.1f}" x2="{x1:.1f}" y1="{y0:.1f}" y2="{y0:.1f}"/>')
+        labels.append(
+            f'<g class="{classes}"><text x="{x0 + 8:.1f}" y="{label_y:.1f}">{_esc(text)}</text></g>'
+        )
+    if reservoir is None:
+        labels.append('<g class="reservoir"><text x="24" y="44">No reservoir found</text></g>')
+    svg = (
+        f'<svg class="overlay" id="overlay" viewBox="0 0 {width:.0f} {height:.0f}" '
+        'preserveAspectRatio="none" aria-hidden="true">'
+        f"{''.join(shapes)}{''.join(labels)}</svg>"
+    )
+    return svg, width, height
+
+
 def _flag(element_id: str, text: str, show: bool) -> str:
     hidden = "" if show else " hidden"
     return f'<p id="{element_id}" class="flag"{hidden}>{_esc(text)}</p>'
@@ -726,6 +854,7 @@ def _html(
     selected: int | None,
     error: str | None = None,
     now: datetime | None = None,
+    detections: dict | None = None,
 ) -> str:
     """The document. Live text is written here. Preview chrome is sliced from the specimen."""
     frames = board.frames
@@ -841,7 +970,21 @@ def _html(
     photo = ""
     if selected is not None:
         name = frames[selected].name
-        photo = f'<img id="frame" src="{_esc(_src(name))}" alt="{_esc(name)}">'
+        overlay, width, height = ("", 1280.0, 720.0)
+        toggle = ""
+        if detections is not None:
+            overlay, width, height = _overlay(detections)
+            toggle = (
+                '<button type="button" class="boxes-toggle" id="boxes-toggle" aria-pressed="true">'
+                "Detections</button>"
+            )
+        ratio = width / height
+        photo = (
+            f'<div class="shot" style="aspect-ratio: {width:.0f} / {height:.0f}; '
+            f'width: min(100cqw, calc(100cqh * {ratio:.4f}))">'
+            f'<img id="frame" src="{_esc(_src(name))}" alt="{_esc(name)}">'
+            f"{overlay}</div>{toggle}"
+        )
     gauge_class = "gauge low" if gauge_low else "gauge"
     gauge_html = (
         f'<div class="{gauge_class}" id="gauge" style="--fill: {gauge_fill:.1f}%" aria-hidden="true">'

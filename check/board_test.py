@@ -4,6 +4,7 @@
     python check/board_test.py
 """
 
+import json
 import sys
 import tempfile
 import unittest
@@ -83,6 +84,29 @@ class BoardTests(unittest.TestCase):
         jpegs = [item for item in frames.iterdir() if item.suffix.lower() in {".jpg", ".jpeg"}]
         self.assertEqual(len(jpegs), 1)
         self.assertEqual(jpegs[0].read_bytes(), shot())
+
+    def test_the_frame_keeps_its_boxes_beside_it(self):
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        folder = Path(held.name)
+        frames = folder / "frames"
+        boxes = four_cups() + (
+            sight.Box("Reservoir", 0.5, 0.0, 0.0, 10.0, 990.0),
+            sight.Box("chair", 0.7, 1.0, 2.0, 3.0, 4.0),
+        )
+        db = ledger.connect(folder / "tank.sqlite")
+        try:
+            board.tick(db, frames, shot(), boxes, datetime(2026, 10, 12, 12, 0, tzinfo=CHICAGO), size=(1280, 720))
+        finally:
+            db.close()
+        saved = json.loads((frames / "00000001.json").read_text(encoding="utf-8"))
+        self.assertEqual((saved["width"], saved["height"]), (1280, 720))
+        self.assertEqual(saved["gauge_oz"], sight.seen(boxes).gauge_oz)
+        used = {(box["name"], box["score"]): box["used"] for box in saved["boxes"]}
+        self.assertEqual(
+            used,
+            {("Reservoir", 0.9): True, ("liquid-level", 0.8): True, ("Reservoir", 0.5): False, ("chair", 0.7): False},
+        )
 
     def test_empty_jpeg_writes_nothing(self):
         held = tempfile.TemporaryDirectory()

@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 
@@ -6,12 +7,24 @@ import ledger
 _KEEP = 8
 
 
-def record(db: sqlite3.Connection, frames: Path, jpeg: bytes, one: ledger.Tick) -> ledger.Applied:
+def record(
+    db: sqlite3.Connection,
+    frames: Path,
+    jpeg: bytes,
+    one: ledger.Tick,
+    detections: dict | None = None,
+) -> ledger.Applied:
+    """One tick. `detections` is written beside the JPEG as the same name with `.json`."""
     if not jpeg:
         raise ValueError("JPEG bytes are empty.")
     applied = ledger.tick(db, one)
     frames.mkdir(parents=True, exist_ok=True)
     name = _next_name(frames)
+    sidecar = (frames / name).with_suffix(".json")
+    if detections is None:
+        sidecar.unlink(missing_ok=True)
+    else:
+        sidecar.write_text(json.dumps(detections), encoding="utf-8")
     (frames / name).write_bytes(jpeg)
     _prune(frames)
     return applied
@@ -56,3 +69,4 @@ def _prune(frames: Path) -> None:
     found = _ordered(frames)
     for _mtime, name in found[:-_KEEP]:
         (frames / name).unlink()
+        (frames / name).with_suffix(".json").unlink(missing_ok=True)

@@ -29,6 +29,10 @@ def four_cups():
 
 
 class SightTests(unittest.TestCase):
+    def test_chosen_is_the_best_box_of_each_class_seen_reads(self):
+        boxes = four_cups() + (box("Reservoir", 0.5), box("person", 0.6), box("chair", 0.9), box("person", 0.3))
+        self.assertEqual(sight.chosen(boxes), (four_cups()[0], four_cups()[1], box("person", 0.6)))
+
     def test_no_boxes(self):
         got = sight.seen(())
         self.assertEqual(got.gauge_oz, None)

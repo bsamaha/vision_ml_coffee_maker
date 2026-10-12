@@ -4,6 +4,7 @@
     python check/loop_test.py
 """
 
+import json
 import os
 import re
 import sys
@@ -187,6 +188,36 @@ class LoopTests(unittest.TestCase):
         finally:
             running.close()
             running.close()
+
+    def test_boxes_sit_beside_each_frame_and_leave_with_it(self):
+        folder = self.folder()
+        frames = folder / "frames"
+        start = at("12:00:00")
+        db = ledger.connect(folder / "tank.sqlite")
+        try:
+            for index in range(9):
+                when = start + timedelta(minutes=index)
+                loop.record(db, frames, shot(index), tick(when, 40.0), {"boxes": [], "tick": index})
+        finally:
+            db.close()
+        sidecars = sorted(path.name for path in frames.glob("*.json"))
+        self.assertEqual(sidecars, sorted(path.with_suffix(".json").name for path in jpegs(frames)))
+        self.assertEqual(len(sidecars), 8)
+        newest = max(jpegs(frames), key=lambda path: path.name)
+        self.assertEqual(json.loads(newest.with_suffix(".json").read_text(encoding="utf-8"))["tick"], 8)
+
+    def test_a_frame_without_boxes_drops_a_stale_sidecar(self):
+        folder = self.folder()
+        frames = folder / "frames"
+        frames.mkdir()
+        (frames / "00000001.json").write_text('{"boxes": []}', encoding="utf-8")
+        db = ledger.connect(folder / "tank.sqlite")
+        try:
+            loop.record(db, frames, shot(0), tick(at("12:00:00"), 40.0))
+        finally:
+            db.close()
+        self.assertTrue((frames / "00000001.jpg").is_file())
+        self.assertFalse((frames / "00000001.json").exists())
 
     def test_crash_leftover_nine_ends_at_eight(self):
         folder = self.folder()

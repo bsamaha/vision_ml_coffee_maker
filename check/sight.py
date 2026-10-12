@@ -27,6 +27,12 @@ class Seen(NamedTuple):
     person: bool
 
 
+def chosen(boxes: Sequence[Box]) -> tuple[Box, ...]:
+    """The boxes `seen` reads: the best Reservoir, liquid-level, and person."""
+    picks = (_best(boxes, _RESERVOIR), _best(boxes, _LIQUID), _best(boxes, _PERSON))
+    return tuple(pick for pick in picks if pick is not None)
+
+
 def seen(boxes: Sequence[Box]) -> Seen:
     reservoir = _best(boxes, _RESERVOIR)
     liquid = _best(boxes, _LIQUID)
