@@ -127,14 +127,15 @@ class LiveTests(unittest.TestCase):
         self.assertIn("Fri 9", prior)
         self.assertEqual(prior.count("no rows"), 3)
         self.assertNotIn("120 ms", block(page, "ticks", "</ul>"))
-        self.assertIn("Preview, not on the Pi", page)
+        self.assertNotIn("Preview, not on the Pi", page)
+        self.assertNotIn("data-state=", page)
         self.assertNotIn("alarm", classes(opening(page, "board")))
         self.assertEqual(node(page, "live-mark"), "Live")
         self.assertIn("hidden", opening(page, "review"))
         self.assertIn("hidden", opening(page, "stale-banner"))
         self.assertIn("hidden", opening(page, "unverified"))
         self.assertNotIn('show("open")', page)
-        self.assertIn("const STATES", page)
+        self.assertNotIn("const STATES", page)
 
     def test_booked_17_5_stays_half_and_alarm_off(self):
         folder = self.folder()
@@ -242,7 +243,7 @@ class LiveTests(unittest.TestCase):
         running = live.serve(path, frames, 0)
         try:
             page = self.read(running, "/")
-            strip = block(page, "strip", 'id="preview"')
+            strip = block(page, "strip", "</footer>")
             captions = re.findall(r'class="cap">([^<]*)', strip)
             self.assertEqual(
                 captions,
@@ -290,7 +291,7 @@ class LiveTests(unittest.TestCase):
             running.close()
             running.close()
 
-    def test_empty_database_leaves_the_open_state_in_the_script(self):
+    def test_empty_database_leaves_the_ounces_blank(self):
         folder = self.folder()
         path, frames = self.database(folder)
         db = ledger.connect(path)
@@ -303,7 +304,8 @@ class LiveTests(unittest.TestCase):
         self.assertNotIn("<li", block(page, "events", "</ol>"))
         self.assertNotIn("Sun 11", block(page, "prior", 'id="ticks"'))
         self.assertNotIn("Monday", block(page, "when", "</p>"))
-        self.assertIn("Preview, not on the Pi", page)
+        self.assertNotIn("Preview, not on the Pi", page)
+        self.assertNotIn("data-state=", page)
         self.assertNotIn("120 ms", block(page, "ticks", "</ul>"))
 
     def test_missing_file_stays_missing(self):
@@ -315,8 +317,9 @@ class LiveTests(unittest.TestCase):
         self.assertFalse(frames.exists())
         self.assertEqual(node(page, "ounces"), "")
         self.assertEqual(node(page, "band-name"), "")
-        self.assertNotIn("40.0 fl oz", without_scripts(page))
-        self.assertIn("Preview, not on the Pi", page)
+        self.assertNotIn("40.0 fl oz", page)
+        self.assertNotIn("Preview, not on the Pi", page)
+        self.assertNotIn("data-state=", page)
 
 
 if __name__ == "__main__":

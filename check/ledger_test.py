@@ -1279,6 +1279,84 @@ class LedgerTests(unittest.TestCase):
             pcount=1,
         )
 
+    def test_a_bottom_flicker_stays_empty_after_zero(self):
+        _folder, _path, db = self.db()
+        self.row(
+            db,
+            "12:00",
+            3.5,
+            False,
+            booked=35,
+            m15=0,
+            today=0,
+            alarm=True,
+            activity="idle",
+            events=(("alarm_on", "Alarm on. Level 3.5 fl oz.", 35, 35, None),),
+        )
+        self.row(db, "12:01", 0, False, booked=0, m15=0, today=0, alarm=True, activity="idle")
+        self.row(db, "12:02", 3.4, False, booked=0, m15=0, today=0, alarm=True, activity="idle")
+        self.row(db, "12:03", 2.9, False, booked=0, m15=0, today=0, alarm=True, activity="idle")
+        self.row(db, "12:04", 0, False, booked=0, m15=0, today=0, alarm=True, activity="idle")
+        self.row(db, "12:05", 8, False, booked=80, m15=0, today=0, alarm=True, activity="idle")
+
+    def test_an_empty_return_at_3_fl_oz_does_not_fill(self):
+        _folder, _path, db = self.db()
+        self.row(
+            db,
+            "12:00",
+            0,
+            False,
+            booked=0,
+            m15=0,
+            today=0,
+            alarm=True,
+            activity="idle",
+            events=(("alarm_on", "Alarm on. Level 0 fl oz.", 0, 0, None),),
+        )
+        self.row(
+            db,
+            "12:01",
+            None,
+            True,
+            booked=0,
+            m15=0,
+            today=0,
+            alarm=True,
+            activity="idle",
+            seen=1,
+            gap=1,
+            gperson=1,
+            events=(("person", "Person seen.", None, 0, None),),
+        )
+        self.row(
+            db,
+            "12:02",
+            None,
+            False,
+            booked=0,
+            m15=0,
+            today=0,
+            alarm=True,
+            activity="out",
+            taken=0,
+            out=True,
+            gap=0,
+            events=(("taken", "Reservoir taken. Saved 0 fl oz.", None, 0, None),),
+        )
+        self.row(
+            db,
+            "12:03",
+            3.5,
+            False,
+            booked=0,
+            m15=0,
+            today=0,
+            alarm=True,
+            activity="out",
+            out=True,
+            taken=0,
+        )
+
     def test_a_gauge_of_zero_does_not_clear_the_previous_line(self):
         _folder, _path, db = self.db()
         self.row(db, "12:00", 40, False, booked=400, m15=0, today=0, alarm=False, activity="idle")

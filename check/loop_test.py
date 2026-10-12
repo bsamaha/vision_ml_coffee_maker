@@ -70,7 +70,7 @@ def jpegs(folder):
 
 
 def strip_srcs(page):
-    strip = block(page, "strip", 'id="preview"')
+    strip = block(page, "strip", '</footer>')
     return [unquote(src) for src in re.findall(r'<img src="([^"]*)"', strip)]
 
 
@@ -122,7 +122,7 @@ class LoopTests(unittest.TestCase):
         try:
             self.assertEqual(node(page, "ounces"), "40.0 fl oz")
             self.assertEqual(node(page, "band-name"), "3/4")
-            strip = block(page, "strip", 'id="preview"')
+            strip = block(page, "strip", '</footer>')
             captions = re.findall(r'class="cap">([^<]*)', strip)
             self.assertEqual(captions, ["Now"])
             srcs = strip_srcs(page)
@@ -168,7 +168,7 @@ class LoopTests(unittest.TestCase):
         page, running = self.page(path, frames)
         try:
             self.assertEqual(node(page, "ounces"), "32.0 fl oz")
-            strip = block(page, "strip", 'id="preview"')
+            strip = block(page, "strip", '</footer>')
             captions = re.findall(r'class="cap">([^<]*)', strip)
             self.assertEqual(captions, list(_CAPTIONS))
             self.assertEqual(len(captions), 8)
@@ -213,7 +213,7 @@ class LoopTests(unittest.TestCase):
         page, running = self.page(path, frames)
         try:
             self.assertEqual(node(page, "ounces"), "40.0 fl oz")
-            captions = re.findall(r'class="cap">([^<]*)', block(page, "strip", 'id="preview"'))
+            captions = re.findall(r'class="cap">([^<]*)', block(page, "strip", '</footer>'))
             self.assertEqual(captions[-1], "Now")
             self.assertEqual(len(captions), 8)
             srcs = strip_srcs(page)
@@ -245,7 +245,7 @@ class LoopTests(unittest.TestCase):
         try:
             srcs = strip_srcs(page)
             self.assertEqual(len(srcs), 2)
-            captions = re.findall(r'class="cap">([^<]*)', block(page, "strip", 'id="preview"'))
+            captions = re.findall(r'class="cap">([^<]*)', block(page, "strip", '</footer>'))
             self.assertEqual(captions, ["-0:15", "Now"])
             first = frames / srcs[0].removeprefix("/frame/")
             last = frames / srcs[-1].removeprefix("/frame/")

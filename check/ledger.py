@@ -28,6 +28,9 @@ _NEAR = 10
 _SHIFT = 35
 _BREW_LO = 5
 _BREW_HI = 50
+# Under one cup. An empty tank flickers between no line and about 3 fl oz.
+# A seated 0 locks that booking at 0. The flicker does not raise it.
+_CUP = 50
 _WINDOW = timedelta(minutes=15)
 
 
@@ -180,6 +183,10 @@ def _empty() -> _Fold:
         0,
         0,
     )
+
+
+def _under_cup(gauge: int | None) -> bool:
+    return gauge is not None and gauge < _CUP
 
 
 def _replay(db: sqlite3.Connection) -> _Fold:
@@ -338,7 +345,13 @@ def _step(
                     booked,
                 )
             )
-    elif gauge is None or (reservoir_out and (person or gauge == 0)) or person or gauge == 0:
+    elif gauge is None or (reservoir_out and (person or _under_cup(gauge))) or person or gauge == 0:
+        # A seated 0 leaves a real level alone. It clears a booking still under one cup.
+        if gauge == 0 and not person and not reservoir_out and (booked is None or booked < _CUP):
+            booked = 0
+            baseline = 0
+            prev_gauge = None
+    elif booked == 0 and _under_cup(gauge):
         pass
     elif reservoir_out:
         reservoir_out = False
@@ -434,7 +447,7 @@ def _step(
         seated_15m = out_15m
         seated_today = out_today
 
-    if gauge is not None and gauge != 0:
+    if gauge is not None and gauge != 0 and not (booked == 0 and _under_cup(gauge)):
         prev_gauge = gauge
 
     events.sort(key=lambda event: _KINDS.index(event.kind))

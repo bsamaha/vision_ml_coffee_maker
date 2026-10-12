@@ -79,17 +79,6 @@ _PHOTO = """
   object-fit: cover;
 }
 """
-_REVEAL = """
-<script>
-document.getElementById("preview").addEventListener("click", function (event) {
-  var button = event.target.closest("button");
-  if (!button || !button.dataset.state) return;
-  var photo = document.getElementById("frame");
-  if (photo) photo.hidden = true;
-  document.getElementById("hero").hidden = false;
-});
-</script>
-"""
 
 
 class _Ounces(NamedTuple):
@@ -569,21 +558,10 @@ def _between(text: str, start: str, end: str, missing: str) -> str:
     return text[at : stop + len(end)]
 
 
-def _specimen() -> tuple[str, str, str]:
-    """CSS, the preview footer, and the preview script from `page/live.html` beside this file."""
+def _specimen() -> str:
+    """CSS from `page/live.html` beside this file. The preview footer stays in that file."""
     text = Path(__file__).with_name("live.html").read_text(encoding="utf-8")
-    style = _between(text, "<style>", "</style>", "style block missing")
-    footer = _between(text, '<footer id="preview">', "</footer>", "preview footer missing")
-    script = _between(text, "<script>", "</script>", "const STATES missing")
-    if "const STATES" not in script:
-        raise RuntimeError("const STATES missing")
-    call = 'show("open");'
-    if call not in script:
-        raise RuntimeError('show("open") missing from the specimen script')
-    script = script.replace(call, "", 1)
-    if call in script:
-        raise RuntimeError('show("open") is still in the script')
-    return style, footer, script
+    return _between(text, "<style>", "</style>", "style block missing")
 
 
 def _hero() -> str:
@@ -711,7 +689,7 @@ def _html(board: _Quiet | _Shown, selected: int | None) -> str:
     if selected is not None:
         name = frames[selected].name
         photo = f'<img id="frame" src="{_esc(_src(name))}" alt="{_esc(name)}">'
-    style, footer, script = _specimen()
+    style = _specimen()
     return (
         "<!doctype html>\n"
         '<html lang="en">\n'
@@ -778,9 +756,6 @@ def _html(board: _Quiet | _Shown, selected: int | None) -> str:
         f"{''.join(strip)}</div>\n"
         "</footer>\n"
         "</main>\n"
-        f"{footer}\n"
-        f"{script}\n"
-        f"{_REVEAL}\n"
         "</body>\n"
         "</html>\n"
     )
