@@ -281,6 +281,8 @@ body {
 .device { flex: 1; min-width: 0; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 .device-title { margin: 0; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .device-title span { display: block; font-size: 10px; font-weight: 600; color: var(--muted); }
+.device-title .mode { color: var(--ok); font-weight: 700; }
+.device-title .mode.fallback { color: var(--warn); white-space: normal; max-width: 260px; }
 .device-stats { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 0; }
 .device-stats div { display: flex; flex-direction: column; gap: 2px; }
 .device-stats dt {
@@ -480,7 +482,7 @@ body {
   <footer id="dock">
     <div class="dock-row">
       <section class="device" aria-label="Raspberry Pi">
-        <p class="device-title">Raspberry Pi 4 <span>model times and CPU use averaged over 2 min</span></p>
+        <p class="device-title">Raspberry Pi 4 <span class="mode" id="device-mode">Roboflow Workflow on local Inference</span><span>model times and CPU use averaged over 2 min</span></p>
         <dl class="device-stats">
           <div><dt>CPU use</dt><dd id="device-cpu">48%</dd></div>
           <div><dt>CPU temp</dt><dd id="device-temp">62.8°C</dd></div>

@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
-__all__ = ["serve", "Serving", "error_path"]
+__all__ = ["serve", "Serving", "error_path", "mode_path"]
 
 _CHICAGO = ZoneInfo("America/Chicago")
 _WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
@@ -123,6 +123,8 @@ _SCRIPT = f"""
 }})();
 """
 _ERROR_FILE = "board-error.txt"
+_MODE_FILE = "board-mode.txt"
+_WORKFLOW_MODE = "Roboflow Workflow on local Inference"
 _PHOTO = """
 #scene { container-type: size; }
 .shot { position: relative; flex: none; }
@@ -344,12 +346,14 @@ class _Server(ThreadingHTTPServer):
     db: Path
     frames: Path
     error: Path
+    mode: Path
 
     def __init__(self, db: Path, frames: Path, port: int) -> None:
         super().__init__(("0.0.0.0", port), _Handler)
         self.db = db
         self.frames = frames
         self.error = error_path(db)
+        self.mode = mode_path(db)
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -364,7 +368,9 @@ class _Handler(BaseHTTPRequestHandler):
             raw = urllib.parse.parse_qs(parsed.query, keep_blank_values=True).get("frame", [None])[0]
             selected = _choice(board.frames, raw)
             boxes = None if selected is None else _detections(server.frames, board.frames[selected].name)
-            body = _html(board, selected, _board_error(server.error), detections=boxes).encode("utf-8")
+            body = _html(
+                board, selected, _board_error(server.error), detections=boxes, mode=_board_error(server.mode)
+            ).encode("utf-8")
             self._send(200, body, "text/html; charset=utf-8", {"Cache-Control": "no-store"})
             return
         if parsed.path.startswith("/frame/"):
@@ -463,6 +469,11 @@ def serve(db: Path, frames: Path, port: int = 8080) -> Serving:
 def error_path(db: Path) -> Path:
     """Where the board process writes the one line that explains why it is not ticking."""
     return db.with_name(_ERROR_FILE)
+
+
+def mode_path(db: Path) -> Path:
+    """Where the board process writes which detector it is running."""
+    return db.with_name(_MODE_FILE)
 
 
 def _board_error(path: Path) -> str | None:
@@ -946,6 +957,7 @@ def _html(
     error: str | None = None,
     now: datetime | None = None,
     detections: dict | None = None,
+    mode: str | None = None,
 ) -> str:
     """The document. Live text is written here. Preview chrome is sliced from the specimen."""
     frames = board.frames
@@ -1057,6 +1069,10 @@ def _html(
         tone = f' class="{heat}"' if element_id == "device-temp" and heat else ""
         stats.append(f'<div><dt>{_esc(label)}</dt><dd id="{element_id}"{tone}>{_esc(value)}</dd></div>')
     device_html = "".join(stats)
+    mode_html = ""
+    if mode is not None:
+        tone = "mode" if mode == _WORKFLOW_MODE else "mode fallback"
+        mode_html = f'<span class="{tone}" id="device-mode">{_esc(mode)}</span>'
     captions = _captions(frames)
     strip = []
     for index, (frame, caption) in enumerate(zip(frames, captions)):
@@ -1173,7 +1189,9 @@ def _html(
         '<footer id="dock">\n'
         '<div class="dock-row">\n'
         '<section class="device" aria-label="Raspberry Pi">\n'
-        '<p class="device-title">Raspberry Pi 4 <span>model times and CPU use averaged over 2 min</span></p>\n'
+        '<p class="device-title">Raspberry Pi 4 '
+        f"{mode_html}"
+        "<span>model times and CPU use averaged over 2 min</span></p>\n"
         f'<dl class="device-stats">{device_html}</dl>\n'
         "</section>\n"
         '<details class="diag" id="diag">\n'

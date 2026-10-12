@@ -174,6 +174,27 @@ class BoardTests(unittest.TestCase):
             db.close()
         self.assertEqual(tuple(row), ("2026-10-12T12:00:00-05:00", 180, 793, 78.9, 48.5, 61.2))
 
+    def test_the_workflow_gauge_is_what_the_ledger_books(self):
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        folder = Path(held.name)
+        db = ledger.connect(folder / "tank.sqlite")
+        try:
+            applied = board.tick(
+                db,
+                folder / "frames",
+                shot(),
+                four_cups(),
+                datetime(2026, 10, 12, 12, 0, tzinfo=CHICAGO),
+                seen=sight.Seen(52.5, True),
+            )
+        finally:
+            db.close()
+        self.assertEqual(applied.machine.person, True)
+        saved = json.loads((folder / "frames" / "00000001.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["gauge_oz"], 52.5)
+        self.assertEqual(sum(box["used"] for box in saved["boxes"]), 2)
+
     def test_empty_jpeg_writes_nothing(self):
         held = tempfile.TemporaryDirectory()
         self.addCleanup(held.cleanup)

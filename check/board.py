@@ -6,6 +6,7 @@ is the only function that opens the camera and loads weights.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import sys
 import threading
@@ -152,9 +153,12 @@ def tick(
     cpu_c: float | None = None,
     cpu_use: float | None = None,
     memory_free: float | None = None,
+    seen: sight.Seen | None = None,
 ) -> ledger.Applied:
+    """`seen` is the Workflow's TankGauge output. Without it the gauge is read from `boxes` here."""
     started = time.perf_counter()
-    seen = sight.seen(boxes)
+    if seen is None:
+        seen = sight.seen(boxes)
     gauge_ms = round((time.perf_counter() - started) * 1000)
     one = ledger.Tick(
         at=at,
@@ -191,6 +195,37 @@ def main() -> None:
         tank_ms: int
         person_ms: int
         size: tuple[int, int]
+        seen: sight.Seen | None = None
+
+    def load_workflow() -> object:
+        import numpy as np
+
+        import workflow
+
+        key = workflow.api_key()
+        if key is None:
+            raise RuntimeError("no ROBOFLOW_API_KEY in the environment or ~/tank-envs/roboflow.env")
+        runner = workflow.Runner(key)
+        # The first run downloads and loads both models. Do it before the first tick.
+        runner.run(np.zeros((720, 1280, 3), dtype=np.uint8))
+        return runner
+
+    def detect_workflow(runner: object, jpeg: bytes) -> Passes:
+        import cv2
+        import numpy as np
+
+        frame = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            raise ValueError("The camera frame is not a readable JPEG.")
+        result = runner.run(frame)
+        height, width = frame.shape[:2]
+        return Passes(
+            result.boxes,
+            result.tank_ms,
+            result.person_ms,
+            (int(width), int(height)),
+            sight.Seen(result.gauge_oz, result.person),
+        )
 
     def load() -> Models:
         import accuracy
@@ -313,14 +348,36 @@ def main() -> None:
         error_file.parent.mkdir(parents=True, exist_ok=True)
         error_file.write_text(text + "\n", encoding="utf-8")
 
+    mode_file = live.mode_path(db_path)
+
+    def announce(text: str) -> None:
+        """Which detector the board is running, shown under the photo."""
+        print(text, file=sys.stderr, flush=True)
+        mode_file.parent.mkdir(parents=True, exist_ok=True)
+        mode_file.write_text(text + "\n", encoding="utf-8")
+
     report(None)
+    mode_file.unlink(missing_ok=True)
     serving = live.serve(db_path, frames, 8080)
     db = None
     try:
         capture.FFMPEG = thinned(capture.FFMPEG, BOARD_FPS)
         threading.Thread(target=capture.capture, daemon=True).start()
         try:
-            models = load()
+            runner = None
+            models = None
+            if os.environ.get("TANK_DETECTOR", "workflow") == "workflow":
+                announce("Loading the Roboflow Workflow")
+                try:
+                    runner = load_workflow()
+                    announce("Roboflow Workflow on local Inference")
+                except Exception as error:
+                    traceback.print_exc()
+                    announce(f"In-process RF-DETR. The Roboflow Workflow did not load: {str(error)[:200]}")
+            if runner is None:
+                models = load()
+                if os.environ.get("TANK_DETECTOR") == "local":
+                    announce("In-process RF-DETR")
             db = ledger.connect(db_path)
         except (Exception, SystemExit) as error:
             traceback.print_exc()
@@ -348,7 +405,10 @@ def main() -> None:
             waiting_since = time.monotonic()
             next_tick = waiting_since + MIN_TICK_S
             try:
-                passes = detect(models, grab.jpeg)
+                if runner is not None:
+                    passes = detect_workflow(runner, grab.jpeg)
+                else:
+                    passes = detect(models, grab.jpeg)
                 now_cpu = cpu_times()
                 use = cpu_pct(last_cpu, now_cpu)
                 last_cpu = now_cpu
@@ -368,6 +428,7 @@ def main() -> None:
                     temp_c(),
                     use,
                     mem_free_pct(),
+                    passes.seen,
                 )
             except Exception as error:
                 traceback.print_exc()

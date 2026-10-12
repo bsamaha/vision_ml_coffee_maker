@@ -497,6 +497,20 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(node(page, "device-cpu"), "")
         self.assertEqual(node(page, "device-memory"), "")
 
+    def test_the_device_row_says_which_detector_runs(self):
+        folder = self.folder()
+        path, frames = self.database(folder)
+        self.fill(path, [("12:00", 40, False)])
+        page = self.page(path, frames)
+        self.assertNotIn('id="device-mode"', page)
+        live.mode_path(path).write_text("Roboflow Workflow on local Inference\n", encoding="utf-8")
+        page = self.page(path, frames)
+        self.assertEqual(node(page, "device-mode"), "Roboflow Workflow on local Inference")
+        self.assertNotIn("fallback", opening(page, "device-mode"))
+        live.mode_path(path).write_text("In-process RF-DETR. The Roboflow Workflow did not load: no key\n", encoding="utf-8")
+        page = self.page(path, frames)
+        self.assertIn("fallback", opening(page, "device-mode"))
+
     def test_elapsed_shows_hours(self):
         start = at("09:00")
         self.assertEqual(live._elapsed(start, start + timedelta(seconds=90)), "1:30")
