@@ -72,11 +72,6 @@ class SightTests(unittest.TestCase):
         self.assertAlmostEqual(got.gauge_oz, 20)
         self.assertEqual(got.person, False)
 
-    def test_background_is_ignored(self):
-        got = sight.seen((box("__background__", 0.99, 0, 1000),))
-        self.assertEqual(got.gauge_oz, None)
-        self.assertEqual(got.person, False)
-
     def test_person_at_the_cutoff_counts(self):
         got = sight.seen((box("person", 0.4),))
         self.assertEqual(got.person, True)

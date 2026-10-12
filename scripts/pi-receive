@@ -33,20 +33,15 @@ python=$venv/bin/python
 
 probe() {
   "$python" -c 'import importlib.metadata as m, sys
-from PIL import Image
+import cv2
 import numpy
+import onnxruntime
 if sys.version_info[:2] != (3, 12):
     raise SystemExit(1)
 if not m.version("torch").endswith("+cpu"):
     raise SystemExit(1)
-if not m.version("torchvision").endswith("+cpu"):
-    raise SystemExit(1)
-m.version("rfdetr")
 m.version("inference")
-m.version("numpy")
-m.version("pillow")
-Image.new("RGB", (1, 1))
-numpy.zeros(1)
+cv2.imdecode(numpy.zeros(1, dtype=numpy.uint8), cv2.IMREAD_COLOR)
 '
 }
 

@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "page"))
 sys.path.insert(0, str(ROOT / "check"))
 
 import board
+import camera
 import ledger
 import live
 import sight
@@ -108,13 +109,24 @@ class BoardTests(unittest.TestCase):
             {("Reservoir", 0.9): True, ("liquid-level", 0.8): True, ("Reservoir", 0.5): False, ("chair", 0.7): False},
         )
 
-    def test_the_board_thins_ffmpeg_ahead_of_the_flip(self):
-        command = ["ffmpeg", "-i", "/dev/video0", "-vf", "hflip,vflip", "-f", "mjpeg", "pipe:1"]
-        self.assertEqual(
-            board.thinned(command, 2),
-            ["ffmpeg", "-i", "/dev/video0", "-vf", "fps=2,hflip,vflip", "-f", "mjpeg", "pipe:1"],
-        )
-        self.assertEqual(command[4], "hflip,vflip")
+    def test_the_camera_flips_and_thins_to_two_frames_a_second(self):
+        self.assertEqual(camera.FFMPEG[camera.FFMPEG.index("-vf") + 1], "fps=2,hflip,vflip")
+        self.assertEqual(camera.FFMPEG[camera.FFMPEG.index("-video_size") + 1], "1280x720")
+
+    def test_the_camera_splits_whole_jpegs_and_keeps_the_rest(self):
+        one, two = b"\xff\xd8a\xff\xd9", b"\xff\xd8bb\xff\xd9"
+        self.assertEqual(camera.split_jpegs(b"junk" + one + two + b"\xff\xd8par"), ([one, two], b"\xff\xd8par"))
+        self.assertEqual(camera.split_jpegs(b"no frame yet"), ([], b"no frame yet"))
+
+    def test_the_camera_lock_is_read_from_its_file(self):
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        conf = Path(held.name) / "camera.conf"
+        self.assertIsNone(camera.read_lock(conf))
+        conf.write_text("focus_absolute=310  # settled\nexposure_time_absolute=156\naccepted=1\n", encoding="utf-8")
+        self.assertEqual(camera.read_lock(conf), (310, 156))
+        conf.write_text("focus_absolute=310\n", encoding="utf-8")
+        self.assertIsNone(camera.read_lock(conf))
 
     def test_memory_and_temperature_come_from_proc_and_sys(self):
         held = tempfile.TemporaryDirectory()

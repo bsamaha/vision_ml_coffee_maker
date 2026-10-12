@@ -71,7 +71,7 @@ MJPEG is the format to use. Modes that matter:
 | 1920×1080 | 30 fps |
 | 1280×720 | 60 fps |
 
-Each size has one rate. Asking `ffmpeg` for `-framerate 15` at 1280×720 still gets 60 fps from the camera. Flipping and re-encoding all 60 frames a second cost `ffmpeg` about 166% CPU. The board puts `fps=2` ahead of the flip, which brings `ffmpeg` to about 15%. The training capture page keeps its own command.
+Each size has one rate. Asking `ffmpeg` for `-framerate 15` at 1280×720 still gets 60 fps from the camera. Flipping and re-encoding all 60 frames a second cost `ffmpeg` about 166% CPU. `check/camera.py` puts `fps=2` ahead of the flip, which brings `ffmpeg` to about 15%.
 
 Uncompressed YUYV is much slower (1080p at 2 fps) and is not the capture format.
 
@@ -91,17 +91,15 @@ Controls, read on 9 October 2026:
 | `auto_exposure` | 3 | Aperture Priority. Manual mode is 1. After switching to 1, set `exposure_time_absolute` or the frame goes dark. This row is the reading from before the lock. The live loop does not change the shutter. |
 | `power_line_frequency` | 1 | 50 Hz. This room is 60 Hz, which is value 2. |
 
-## Preview and Nano
+## The board and its models
 
-`scripts/pi-receive` starts `check/board.py` on port 8080. On this LAN that is [http://192.168.1.248:8080](http://192.168.1.248:8080). The board draws the `Reservoir`, `liquid-level`, and `person` boxes over its own photo, so the old boxed person page, `archive/check/preview.py`, is not needed. The hook does not start it.
+`scripts/pi-receive` starts `check/board.py` on port 8080. On this LAN that is [http://192.168.1.248:8080](http://192.168.1.248:8080). The board draws the `Reservoir`, `liquid-level`, and `person` boxes over its own photo.
 
-The interpreter is the slot uv builds from `uv.lock`, under `/home/bs/tank-envs/slots/`. uv is `/home/bs/.local/bin/uv`. The pins are `inference` 1.7.4, CPU `torch` 2.14.1, `rfdetr` 1.10.1, and `numpy` 2.3.5, which `inference` needs below 2.4.
+The interpreter is the slot uv builds from `uv.lock`, under `/home/bs/tank-envs/slots/`. uv is `/home/bs/.local/bin/uv`. The pins are `inference` 1.7.4, CPU `torch` 2.14.1, and `numpy` 2.3.5, which `inference` needs below 2.4.
 
-The board runs the Roboflow Workflow in section 8 of [technical-solution.md](technical-solution.md). `inference` downloaded both models from Roboflow as ONNX, about 215 MB, into `/home/bs/.inference/cache`, and serves them on the CPU. The Roboflow API key is in `/home/bs/tank-envs/roboflow.env`, mode 600, outside the repository. Keep both when wiping the board.
+The board runs the Roboflow Workflow in section 8 of [technical-solution.md](technical-solution.md). `inference` downloaded both models from Roboflow as ONNX, about 215 MB, into `/home/bs/.inference/cache`, and serves them on the CPU. The Roboflow API key is in `/home/bs/tank-envs/roboflow.env`, mode 600, outside the repository. Keep both when wiping the board. With the kitchen empty, the COCO person model also finds things like a bowl, chairs, a dining table, and a bottle; the board keeps those in each frame's JSON and draws only people.
 
-The fallback path loads the older PyTorch weights. The person weights are `/home/bs/.roboflow/models/rf-detr-nano.pth` (349 MB), person class only. The tank weights are `/home/bs/.roboflow/models/rate-and-volume-of-coffee-1/weights.pth`, classes `Reservoir` and `liquid-level`. Both are RF-DETR Nano on CPU. The same `RFDETRNano(device="cpu")` and `predict` call as the desk supervisor. That project refuses to load without CUDA. This one does not.
-
-On 9 October 2026 a 1280×720 person pass took about 4.4 seconds after the weights were on disk, with `ffmpeg` encoding 60 fps beside it. The first load, including the download, was about 3 minutes. A later load was about 15 seconds. With the kitchen empty the person model returned bowl, chair, dining table, and bottle. No person was in that shot.
+On 9 October 2026, in PyTorch, a 1280×720 person pass took about 4.4 seconds with `ffmpeg` encoding 60 fps beside it.
 
 Measured with the board running:
 
@@ -116,9 +114,9 @@ Measured with the board running:
 | Free memory | about 68% | about 53% |
 | Restart to first reading | about 66 s | about 4 min the first time, mostly the model download; less from the cache |
 
-`archive/check/nano_person.py` loads its own COCO Nano and reads `:8080/frame.jpg`. The live board does not serve that path. Roboflow Inference runs inside the board process, not as a server on port 9001, and Docker is not installed. The live path serves the page on port 8080.
+Roboflow Inference runs inside the board process, not as a server on port 9001, and Docker is not installed.
 
-Every frame and box file from the 11 October rehearsal is in `/home/bs/rehearsal-2026-10-11/` (273 frames).
+The refill sequence from the 11 October rehearsal, frames 303 to 316 with their box files, is kept in `/home/bs/rehearsal-2026-10-11/`.
 
 # Coffee makers
 

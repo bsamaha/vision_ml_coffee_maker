@@ -506,10 +506,10 @@ class LiveTests(unittest.TestCase):
         live.mode_path(path).write_text("Roboflow Workflow on local Inference\n", encoding="utf-8")
         page = self.page(path, frames)
         self.assertEqual(node(page, "device-mode"), "Roboflow Workflow on local Inference")
-        self.assertNotIn("fallback", opening(page, "device-mode"))
-        live.mode_path(path).write_text("In-process RF-DETR. The Roboflow Workflow did not load: no key\n", encoding="utf-8")
+        self.assertNotIn("loading", opening(page, "device-mode"))
+        live.mode_path(path).write_text("Loading the Roboflow Workflow\n", encoding="utf-8")
         page = self.page(path, frames)
-        self.assertIn("fallback", opening(page, "device-mode"))
+        self.assertIn("loading", opening(page, "device-mode"))
 
     def test_elapsed_shows_hours(self):
         start = at("09:00")

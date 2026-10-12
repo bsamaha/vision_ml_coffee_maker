@@ -5,7 +5,7 @@ from typing import NamedTuple
 
 import volume
 
-# Same 0.4 cutoff the tank and person model calls already use.
+# The confidence the Workflow's two model steps use. TankGauge carries the same cutoff.
 THRESHOLD = 0.4
 
 _RESERVOIR = "Reservoir"
@@ -51,10 +51,7 @@ def _best(boxes: Sequence[Box], name: str) -> Box | None:
     chosen = None
     chosen_score = -1.0
     for box in boxes:
-        label = box.name
-        if label == "__background__" or label.startswith("background_class"):
-            continue
-        if label != name or box.score < THRESHOLD:
+        if box.name != name or box.score < THRESHOLD:
             continue
         if chosen is None or box.score > chosen_score:
             chosen = box

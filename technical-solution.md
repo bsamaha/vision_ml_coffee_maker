@@ -6,41 +6,29 @@ This is a proof on the Ninja, not a small copy of the well. A brew here empties 
 
 ## What is already true
 
-The camera stays where it is. It looks at the graduated face from a little above the reservoir, with the whole machine in the frame. On 9 October 2026 a fill of about 75% showed as a bright horizontal band. The cup marks above that band were readable. Do not zoom. This webcam has no zoom, and a crop missed the tank.
+The camera stays where it is. It looks at the graduated face from a little above the reservoir, with the whole machine in the frame. Do not zoom. This webcam has no zoom, and a crop missed the tank.
 
-The camera body is upside down. There is no flip control on the device. Every still and the live page use `hflip,vflip`. The process on port 8080 is `check/board.py`, started by `scripts/pi-receive`. It owns `/dev/video0`. Open [http://192.168.1.248:8080](http://192.168.1.248:8080). The earlier pages are in `archive/check/`. Do not start one of them while the board is up.
+The camera body is upside down, with no flip control on the device, so every frame is turned with `hflip,vflip`. The process on port 8080 is `check/board.py`, started by `scripts/pi-receive`. It owns `/dev/video0`. Open [http://192.168.1.248:8080](http://192.168.1.248:8080).
 
-The person model is the COCO RF-DETR Nano. The tank model is the fine-tuned RF-DETR Nano, with classes `Reservoir` and `liquid-level`. Both run on the Pi's CPU inside a Roboflow Workflow, with the TankGauge custom block turning their boxes into ounces (section 8). On 9 October one 1280×720 person pass took about 4.4 seconds while `ffmpeg` was flipping and encoding 60 frames a second. With `ffmpeg` thinned to 2 frames a second, each pass took about 1.85 seconds in PyTorch on 11 October, and takes about 1.6 to 1.9 seconds as ONNX in the Workflow on 12 October. Ounces come from `check/volume.py`. The live page rules are in section 6.
+The person model is the COCO RF-DETR Nano. The tank model is the fine-tuned RF-DETR Nano, with classes `Reservoir` and `liquid-level`. Both run on the Pi's CPU inside a Roboflow Workflow, with the TankGauge custom block turning their boxes into ounces (section 8). Each pass takes about 1.6 to 1.9 seconds. Ounces come from `check/volume.py`. The live page rules are in section 6.
 
 Used, last 15 min and Used today at 0.0 fl oz are normal. The refill alarm is under 17.5 fl oz. Accuracy is only figured on readings at or above 25%.
 
 ## Traps
 
-- Training stills are 1280×720 MJPEG with the same `hflip,vflip` as the preview. Another size or an unflipped frame is a different picture from the one we checked.
-- Stop the process that owns `/dev/video0` before opening it from anything else. Right now that process is `check/board.py`. Two opens fight over the camera.
-- `power_line_frequency=2` is 60 Hz. Value 1 is 50 Hz.
-- Manual exposure is `auto_exposure=1`, then `exposure_time_absolute`. Switching to manual without the absolute value blacks the frame. `auto_exposure=3` is the current Aperture Priority mode. A bright morning clips that automatic picture. Lock then looks for a usable exposure instead of copying the white frame. Darker and Brighter on the capture page change the shutter and keep the same focus. Set that once, then leave it for the rest of the 24 stills.
-- Lock focus only after this aim is final: `focus_automatic_continuous=0`, then `focus_absolute` at the settled value. Set those again if a new capture process opens the camera. They do not always stick.
+- One process owns `/dev/video0`, and right now that is `check/board.py`. Stop it before opening the camera from anything else. Two opens fight over the camera.
 - A Classic brew uses whatever is in the reservoir and empties it. The refill alarm will come on partway through a normal brew and stay on until someone pours. That is the alarm demo. It is not a fault in the page.
 - Set WARM to 0 and wait until the machine is off before pouring. With the plate on, water added to the reservoir starts another brew, so the pour and the pump run together.
 - 1-4 CUP does not stop at 4 cups. Leave it off.
 - The carafe is seated and empty before a brew. If it is missing or already full, the basket overflows.
 - The brew pauses at the start, then continues. During that pause both Used tiles can stay 0. That is not the alarm.
 - Do not stand between the camera and the reservoir for more than about 15 seconds. Two ticks with the reservoir hidden and a person in view read as a take, then a put-back once you step away. The level is not changed, but two extra lines land in the log.
-- A visit is the person class only. A chair box is not a visit. Section 6 is the live person rule. This list does not define a fill.
-- Do not read the line while a person covers the reservoir. Section 6 stores that gauge and leaves the booked ounces alone.
+- A visit is the person class only. A chair box is not a visit. Section 6 is the live person rule.
 - A rise with nobody in frame is not a refill and not a bill. Section 6 updates the level only after the quiet-jump hold, and it does not book 70.
-- Label `liquid` up to the top of the bright band. Vertical reflections in the water and the printed cup numbers are not the line.
-- Under 25% is photographed so the alarm has examples. Those frames are not part of the accuracy average.
 
-## 1. Lock the camera
+## 1. Camera lock
 
-Do this once, before the stills you keep. The aim does not change after it.
-
-The page walks one step at a time.
-
-1. Empty the reservoir, seat the carafe, and turn the machine off. Stand clear. When the reservoir looks sharp, press Lock this picture. The page reads `focus_absolute`, then tries manual exposures. If the automatic picture is clipped white, it looks for a shorter exposure that keeps the tank visible. Otherwise it matches the automatic brightness. The control's idle reading is 166. Writing 166 makes the picture dark, so the page does not use that reading. If the match is still dark, it leaves the camera on automatic and stays on this step.
-2. Look again. Press Keep this lock, or Try again. Try again deletes the lock and returns to step 1.
+Done once on 9 to 10 October, before the stills that were kept. The aim did not change after it. With the reservoir empty and the machine off, the lock read the settled `focus_absolute`, then searched manual exposures for one that kept the tank visible. A bright morning clipped the automatic picture white, so the lock looked for a shorter exposure instead of copying it, and the control's idle reading of 166 made the picture dark, so it is never used. The result is in `/home/bs/tank-envs/camera.conf`:
 
 ```
 focus_absolute=<settled value>
@@ -48,90 +36,60 @@ exposure_time_absolute=<settled value>
 accepted=1
 ```
 
-`check/capture.py` applies `power_line_frequency=2`, manual focus, that focus value, `auto_exposure=1`, then the matched `exposure_time_absolute`, every time it opens the camera. A press that fails is printed in `/tmp/preview.log` and on the page.
+`check/camera.py` reapplies it every time it starts `ffmpeg`, in this order: `power_line_frequency=2` (60 Hz; 1 is 50 Hz), `focus_automatic_continuous=0`, `focus_absolute`, `auto_exposure=1`, then `exposure_time_absolute`. Manual exposure without the absolute value blacks the frame, and the focus setting does not always stick, which is why it is written every time. With no lock file the camera stays on automatic.
 
-## 2. Capture
+## 2. Training data
 
-Open http://raspberrypi.local:8080. That page is `check/capture.py`. It shows the clean camera and does not draw boxes.
+Stills are 1280×720 MJPEG with the same `hflip,vflip` as the live frames. Another size or an unflipped frame is a different picture from the one the model learned. A Ninja cup is 5 fl oz, and 14 MAX is 70 fl oz.
 
-After the lock is kept, the page names one stop at a time. Stand where the camera cannot see you, then press Save this picture. That press writes one file and names the next stop. A second tap while the first press is still working does not write another file. A Ninja cup is 5 fl oz. 14 MAX is 70 fl oz. Fills under 17.5 fl oz, which is under 25%, say alarm.
-
-The shoot is 18 pictures. The carafe can be full or empty. Only the reservoir is in the picture. Four turns, camera stays put:
+The shoot is 18 stills of the reservoir only, camera fixed, in four turns of the machine:
 
 - **Squared tank.** Cup marks face the camera.
-- **Rotated right.** Buttons on the left, reservoir on the right. This is the angle in `train/2026-10-09-first-try/`.
-- **Rotated left.** The other way: reservoir on the left, buttons on the right.
+- **Rotated right.** Buttons on the left, reservoir on the right.
+- **Rotated left.** Reservoir on the left, buttons on the right.
 - **Face on.** Buttons face the camera.
 
-Pour on Squared tank: empty, 1 cup, 2 cups, then the even lines through 14. At empty, 8 cups, and 14 cups, also save Rotated right, Rotated left, and Face on. The cup line is only where you stop pouring. The file name does not store ounces or a percent. The morning clear-water set, with the window glare, is `train/2026-10-10-clear-water/`. The afternoon recapture with the sun off the tank is `train/2026-10-10-clear-water-afternoon/`. First file is `square_empty.jpg`. Upload the afternoon folder as the training set. The test split is a new walk of the same 18 stops, saved in `train/2026-10-10-clear-water-test/` by `archive/check/capture_test.py`. Upload that folder as the test split. Do not put those files in the training set. The level is the box ratio after the pictures are labeled.
+On Squared tank: empty, 1 cup, 2 cups, then the even lines through 14. At empty, 8 cups, and 14 cups, the other three turns as well. Fills under 25% were shot on purpose so the alarm has examples; they are not part of the accuracy average.
 
-Retake the last picture deletes that file and shows the same stop again. Save does not skip a filename that is already in train/. Replace clears that current file. A reload does not take another picture. If the process restarts, it continues at the first missing file. `train/2026-10-10-clear-water-afternoon/` is what you label. Leave `train/2026-10-09-first-try/` and the morning glare folder out of this upload. These files are already flipped. The accuracy number uses fresh fills after training, not these files.
+| Folder | Use |
+|---|---|
+| `train/2026-10-10-clear-water-afternoon/` | Training set, sun off the tank |
+| `train/2026-10-10-clear-water-test/` | Test split, a fresh walk of the same 18 stops |
+| `train/2026-10-10-clear-water/` | Not used: morning window glare |
+| `train/2026-10-09-first-try/` | Not used: first attempt, rotated right only |
 
-Do not save `/frame.jpg` from `archive/check/preview.py`. After the first Nano pass that URL can include boxes. The hook starts `check/board.py`. The live board has no `/frame.jpg`.
+The guided capture page that took these, `check/capture.py`, was removed on 12 October once the shoot was done. It is in the git history before that date.
 
-## 3. Label and train
+## 3. Labels and training
 
-New Roboflow project, Object Detection. Upload `train/2026-10-10-clear-water-afternoon/` only.
-
-The classes are `Reservoir` and `liquid-level`. No person class. The project stores boxes. A polygon is converted to the rectangle around it, so the edges that matter are the top and bottom of that rectangle. Use the box tool.
+Roboflow project, Object Detection, classes `Reservoir` and `liquid-level`, boxes only.
 
 Labeling rules:
 
-- `Reservoir` is the usable tank. The top edge is the 14-cup line, not the plastic lip above it. The bottom edge is the lowest visible point of the reservoir floor. Both edges are level.
-- `liquid-level` uses that same bottom. The top edge is the water line.
-- The water surface is slanted in the picture because the camera looks down. Bisect it. The top of `liquid-level` is the median between the low side of that surface and the high side, not the front lip and not the back of the ellipse.
-- If the 14-cup line is slanted the same way, bisect that line too.
-- An empty frame gets `Reservoir` only. Do not draw `liquid-level`, and do not mark the image null. The white piece at the bottom of the tank is not water.
-- A full frame gets `liquid-level` up to the 14-cup line.
+- `Reservoir` is the usable tank. Its top edge is the 14-cup line, not the plastic lip above it. Its bottom edge is the lowest visible point of the reservoir floor. Both edges are level.
+- `liquid-level` shares that bottom. Its top edge is the water line: the top of the bright band, not the reflections or the printed cup numbers.
+- The camera looks down, so the water surface is slanted in the picture. The top of `liquid-level` bisects it, halfway between its low and high sides. A slanted 14-cup line is bisected the same way.
+- An empty frame gets `Reservoir` only, and is not marked null. The white piece at the bottom of the tank is not water. A full frame gets `liquid-level` up to the 14-cup line.
 
-Percent full is how far the top of `liquid-level` sits between the bottom and the top of `Reservoir`. The two boxes have to share the same bottom or that ratio moves when the water did not.
+Percent full is how far the top of `liquid-level` sits between the bottom and the top of `Reservoir`, so the two boxes have to share the same bottom. Roboflow does not snap box edges, so each pose was labeled in fill order with Repeat Previous: the first picture of a pose set the `Reservoir` floor while zoomed in, and every later picture kept it and moved only the top of `liquid-level`. A turned machine started over on its own floor. Polygons were converted to boxes, because a polygon's lowest point wanders.
 
-The camera does not move during a pose, so the reservoir floor is the same pixels on every picture taken at that angle. Roboflow does not snap one box edge to another. The way to keep the bottoms lined up is to copy a box that is already right, then only move the top of `liquid-level`.
+Training, version 1 of the dataset, split 180 train, 26 valid, 48 test:
 
-How we do that, from Roboflow Annotate:
-
-- Label one pose at a time, in fill order. Squared tank from empty through 14, then rotated right, then rotated left, then face on. Repeat Previous copies the last image's boxes into the same place. That is only right when the coffee maker has not been turned.
-- On the first picture of a pose, zoom in on the floor and set the `Reservoir` bottom on the lowest visible point. Zoom lock keeps that view while the edge is placed. This is the bottom for every later picture of that pose.
-- On the next picture, use Repeat Previous. It is in the Bounding Box, Polygon, or Smart Polygon menu: Undo, Redo, and Repeat Previous. Leave the `Reservoir` box where it landed. If this frame has water, keep `liquid-level` and drag only its top edge to the bisected water line. Do not drag its bottom.
-- On an empty frame, Repeat Previous, then delete `liquid-level` if the previous picture had one. The `Reservoir` box stays.
-- A polygon's bottom is the lowest point of the outline, which wanders. Convert to Box from the right-click menu, then line that straight edge up with the `Reservoir` bottom before leaving the image.
-- When the coffee maker is turned, do not reuse the previous pose's box. Start that pose's first `Reservoir` again, on its own floor, and repeat from there.
-
-Train the tank with Custom Training. Architecture is Roboflow RF-DETR, size Nano. Checkpoint is the COCO default. Neural Architecture Search stays unused: its latency band times TensorRT on a T4, and the Pi loads `RFDETRNano`. YOLO26 stays unused. The person model is the separate COCO Nano.
-
-Use the current dataset. Starting the train saves it as version 1. The split is already 180 train, 26 valid, 48 test. Leave that split.
-
-Preprocessing on that version:
-
-- Auto-Orient on. It strips EXIF so a sideways flag cannot turn a frame.
-- Resize on, 384×384, Stretch to. Nano's documented input is 384×384. Stretch is also what `RFDETRNano.predict` does to a 1280×720 frame: it resizes both sides to 384. Fit (black edges) would train on padded squares the Pi does not make. Stretch scales every y by the same factor, so the level ratio is unchanged when the boxes come back to the original frame.
-- Leave the rest off. No grayscale, auto-contrast, filter null, random sample, static crop, tile, dynamic crop, isolate objects, modify classes, or filter by tag. An empty frame is `Reservoir` only, not a null. The tank is not a small object, and it does not sit in one place across poses.
-
-No augmentations on this version. A later version can add brightness, exposure, blur, and a little noise. Flip, rotation, crop, and shear stay off. The frames are already upright.
-
-Leave the epoch count the Nano form shows. Do not type in the 200 from the search page.
+- Roboflow Custom Training, RF-DETR Nano, COCO checkpoint, the epoch count the form shows.
+- Auto-Orient on, so an EXIF flag cannot turn a frame.
+- Resize to 384×384, Stretch. Nano's input is 384×384, and Stretch matches what inference does to a 1280×720 frame. It scales every y by the same factor, so the level ratio survives. Fit would train on padded squares the Pi never sends.
+- No other preprocessing and no augmentations. Flip, rotation, crop, and shear stay off because the frames are already upright. A later version can add brightness, exposure, blur, and a little noise.
+- Neural Architecture Search and YOLO26 were not used. The person model is the separate stock COCO Nano.
 
 ## 4. Accuracy experiment
 
-After the tank model exists, and before the ledger page stays up. These fills are new.
+Fresh fills after training, the tank squared. The known value is the cup line poured to, not a weight. The model value is one settled frame's reading with nobody in the picture. Three rounds of 4, 6, 8, 10, and 14 cups gave the 15 accuracy rows, all at or above 25% of 14 cups. A 2-cup pour and a brew down through 4 cups gave two alarm rows, kept out of the average. Difference is model percent minus cup-line percent. There is no pass line.
 
-Stop the process on port 8080. One process owns the camera. From `/home/bs/tank`:
-
-```text
-/home/bs/tank-envs/current/bin/python check/accuracy.py
-```
-
-Open [http://192.168.1.248:8080](http://192.168.1.248:8080). The tank stays squared. Do not weigh this fill. The known value is the cup line the page names. The model value is the reading that page records from one settled frame.
-
-Pour, wait for the surface, stand out of the picture, and press Record this reading. A second tap while that press is still working does not write another row. Retake last drops the last row and shows the same stop. A reload shows the rows already in `learn/accuracy.json`.
-
-Three rounds of 4, 6, 8, 10, and 14 cups. Those five lines are each at or above 25% of 14 cups. Those 15 rows are the accuracy rows. Then pour to 2 cups, and brew once so the level falls through 4 cups. Those two rows are the alarm check. They stay out of the average.
-
-Difference is model percent minus the cup-line percent. The number at the top is the average of the absolute differences, in percent of full. There is no pass line.
+The rows are in `learn/accuracy.json` on the Pi. The page that recorded them, `check/accuracy.py`, was removed on 12 October and is in the git history.
 
 ### Result, 10–11 October
 
-The 15 accuracy rows and 2 alarm rows are in `learn/accuracy.json` on the Pi. The page that night scored them with the cup conversion it had then: an average of 10.5% of full, worst 39.7%. `check/volume.py` was then rebuilt from those same rounds, so scoring them again with today's table (4.8%) is in-sample and flatters the model.
+That night's page scored the rows with the cup conversion it had then: an average of 10.5% of full, worst 39.7%. `check/volume.py` was then rebuilt from those same rounds, so scoring them again with today's table (4.8%) is in-sample and flatters the model.
 
 The honest number scores each round with a cup table built from the other two rounds:
 
@@ -145,13 +103,9 @@ The honest number scores each round with a cup table built from the other two ro
 
 From 4 to 10 cups the average is 2.4% of full (12 rows, worst 12.1%). The full tank is the weak point: in rounds 1 and 2 the model put the 14-cup water line at a box ratio of about 0.74, where round 3 put it at 0.995. With clear water at the very top, the surface is hard to see. The 11 October rehearsal hit the same thing once, a refill frame that read 52.5 of 70 fl oz. The ledger covers it: a refill books 70, and the highest settled reading after the refill becomes the full mark (section 6).
 
-## 5. Person experiment
+## 5. Person detection
 
-The live board's detection overlay is this experiment now. Watch [http://192.168.1.248:8080](http://192.168.1.248:8080). The green person box is drawn on each tick's frame, and a tick starts every 7.5 seconds, so stand still for about two ticks.
-
-Stay out of frame. Walk in and stand at the tank. Leave. Walk through once without stopping. Step in, pour, and leave.
-
-Write down when the green box appeared, when it went away, and whether the pour was inside a box. A visit starts when the person box is on and ends after two frames with no person box. One visit is one person-seen event. Only the person class counts, and only the person class is drawn. The person model's other classes stay in the frame's JSON. The live page does not use this two-frame visit. Section 6 writes the person-seen event when the appearance starts.
+The board draws the green person box on each tick's frame, and a tick starts every 7.5 seconds, so a person has to be in view for a tick to be seen. Only the person class counts and is drawn. The person model's other COCO classes stay in each frame's JSON. A visit is one person-seen event, written when an appearance starts (section 6).
 
 ## 6. Live page
 
@@ -162,11 +116,11 @@ Each tick, in order:
 1. One upright 1280×720 JPEG. `hflip`, `vflip`. The focus and exposure lock stays as it was set. The loop does not change the shutter. The webcam sends 1280×720 MJPEG at 60 fps whatever `-framerate` asks for, so the board's `ffmpeg` puts `fps=2` ahead of the flip and only flips and encodes 2 frames a second. With that load gone the two models take about 3.9 s together, but a tick starts at most every 7.5 s. Brewing starts on two ticks in a row that each fall more than 0.5 fl oz. In the 11 October rehearsal a full Classic brew fell about 3.6 fl oz a minute on average (about 3 early, about 4.6 mid-brew), about 0.4 fl oz a tick at 7.5 s. At 3.9 s a tick it would fall well under 0.5 a tick and seldom start Brewing. The pause also keeps the Pi near 62 °C, under its 80 °C soft throttle; running flat out it reached 79 °C. The reading's time is when that photo was taken, not when the models finished, and `capture_ms` is how old the photo was when the tick took it. Each reading also stores the board process's memory (`rss_mb`), the CPU temperature (`temp_c`), whole-Pi CPU use since the previous tick (`cpu_pct`), and free memory (`mem_free_pct`).
 2. The Roboflow Workflow in section 8 runs on that full frame. Its first step is the tank RF-DETR Nano, `rate-and-volume-of-coffee/1`, classes `Reservoir` and `liquid-level`.
 3. Its second step is the person RF-DETR Nano on the same frame, `rfdetr-nano`, the COCO checkpoint, kept to the person class.
-4. Its third step is the TankGauge custom block: the cup table from `check/volume.py` in `check/tank_gauge.py`. No memory. No reservoir box means `gauge_oz` is null. No liquid line means 0. Percent is cups / 14 × 100. Fluid ounces are cups × 5. If the Workflow does not load, the board runs the same two models with `rfdetr` and reads the gauge with `check/sight.py`, which gives the same answer on the same boxes, and the Raspberry Pi row says so in amber.
+4. Its third step is the TankGauge custom block: the cup table from `check/volume.py` in `check/tank_gauge.py`. No memory. No reservoir box means `gauge_oz` is null. No liquid line means 0. Percent is cups / 14 × 100. Fluid ounces are cups × 5. If the Workflow does not load, the board does not tick, and the page stays up with the reason in red.
 5. One SQLite transaction in `learn/tank.sqlite`. Insert a `reading`. Replace the `machine` row, including both Used totals and the coffee figures. Insert an `event` when a person appearance starts, the reservoir comes back, the activity changes, or the alarm changes. A return that also changes the alarm writes both events. Tables are in `page/schema.sql`.
 6. Write the JPEG under `learn/frames/` and delete all but the newest 8. The database does not store the JPEG. Beside each JPEG, write a JSON file with the same name: every box both models returned on that frame, its class, confidence, and corners, whether the gauge or the person check used it, and the gauge reading. It is pruned with its JPEG. The JPEG itself stays clean, with no boxes drawn in.
 
-The page on port 8080 reads the `machine` row, the newest 50 `event` rows, the newest 40 `reading` rows (for the Raspberry Pi row and the use rate), the list of logged days, and those 8 frames with their box files. It does not open the camera, it does not run a model, and it does not scan the whole `reading` table. It fetches itself every 3 seconds, so nobody reloads it during the demo. The header says how old the last reading is. Past 30 seconds it turns red and says Not updating. When the loop cannot tick, it writes one line to `learn/board-error.txt` and the page shows that line in red. A good tick clears it. The photo shows that frame's saved boxes on top: Reservoir in blue, the water line in amber with the reading and percent, and a person in green. The person model's other COCO classes stay in the JSON and are not drawn. A box the gauge did not use is dashed. The Detections button hides them, and the browser remembers that choice. Under the photo, a Raspberry Pi row shows CPU use and the tank and person model times averaged over the last 2 minutes, the newest CPU temperature and free memory, and how often a reading lands. The temperature turns amber at 75 °C and red at 80 °C. The board to match is `page/live.html`.
+The page on port 8080 reads the `machine` row, the newest 50 `event` rows, the newest 40 `reading` rows (for the Raspberry Pi row and the use rate), the list of logged days, and those 8 frames with their box files. It does not open the camera, it does not run a model, and it does not scan the whole `reading` table. It fetches itself every 3 seconds, so nobody reloads it during the demo. The header says how old the last reading is. Past 30 seconds it turns red and says Not updating. When the loop cannot tick, it writes one line to `learn/board-error.txt` and the page shows that line in red. A good tick clears it. The photo shows that frame's saved boxes on top: Reservoir in blue, the water line in amber with the reading and percent, and a person in green. The person model's other COCO classes stay in the JSON and are not drawn. A box the gauge did not use is dashed. The Detections button hides them, and the browser remembers that choice. Under the photo, a Raspberry Pi row shows CPU use and the tank and person model times averaged over the last 2 minutes, the newest CPU temperature and free memory, and how often a reading lands. The temperature turns amber at 75 °C and red at 80 °C. The page's markup is written in `page/live.py`, and its styles are `page/live.css`.
 
 The process keeps its running totals in memory and replays `reading` only when it starts, so a tick costs the same at the end of a day as at the start. A failed tick prints the traceback to `/tmp/preview.log` and the loop goes on with the next picture. If the models do not load, the page stays up and shows why.
 
@@ -210,7 +164,7 @@ WARM is off. 1-4 CUP is off. The carafe is seated and empty. Start near 40 fl oz
 
 Stop the cycle and wait until the machine is off before the reservoir comes out.
 
-1. Open the page. The band is 3/4. The refill alarm is off. Activity is Idle. The log has no fill. Used, last 15 min and Used today are both 0.0 fl oz. Use rate reads 0.0 and Empty in says Not draining. The photo shows the Reservoir box in blue and the water line in amber with its reading. The Raspberry Pi row under the photo says Roboflow Workflow on local Inference in green and shows the model times, about 1.6 to 1.9 s each. If it says In-process RF-DETR in amber, the Workflow did not load and the board is on the fallback; the demo still works.
+1. Open the page. The band is 3/4. The refill alarm is off. Activity is Idle. The log has no fill. Used, last 15 min and Used today are both 0.0 fl oz. Use rate reads 0.0 and Empty in says Not draining. The photo shows the Reservoir box in blue and the water line in amber with its reading. The Raspberry Pi row under the photo says Roboflow Workflow on local Inference in green and shows the model times, about 1.6 to 1.9 s each.
 2. Step in where the reservoir stays visible, then step out. A green person box appears on the photo. One log line says a person was seen. People seen today becomes 1 on that line. The level is not a fill or a dump.
 3. Leave the reservoir seated and start a Classic brew from the side, without blocking the camera's view of the reservoir. The opening pause is Idle, and both Used tiles can stay 0. That is not the alarm. Brewing shows about 40 seconds after the level starts falling, and stays on through the brew. Used today climbs, Use rate shows about 3 to 5 fl oz a minute, and Empty in counts down. From 40 fl oz at about 3.6 fl oz a minute, the band goes Low and the alarm comes on about 6 minutes in, and the tank runs dry about 11 minutes in. Do not walk through the frame during the brew.
 4. Stop the cycle. Take the reservoir out of the frame, fill it to the 14-cup line, put it back, and leave the frame. Carrying it straight out is a take: a person seen in the two ticks before it disappeared counts. Wait for the return tick, the first one with the reservoir seated and nobody in view. That tick books 70 when the model rose at least 3.5 fl oz from the saved ounces. The bill is 70 minus those saved ounces. The log keeps the model reading next to 70, and the level panel shows it as Camera reads. That first reading can be low on a full, clear tank. The next settled reading becomes the full mark. Both Used tiles stay at the ounces the brew dropped. Refilled today and Refill bill today show the fill. The monthly estimate is 30 times today's dollars, because it has 1 day of data.
@@ -239,7 +193,7 @@ How it is built:
 - The API key is `ROBOFLOW_API_KEY`, read from the environment or from `~/tank-envs/roboflow.env` on the Pi, which is outside the repository and readable only by `bs`.
 - The board sets `ALLOW_CUSTOM_PYTHON_EXECUTION_IN_WORKFLOWS=True` before importing `inference`. One Roboflow source says that default changed to off in June 2026.
 - Per-step times come from the Workflows profiler, so the Raspberry Pi row still shows the tank and person models separately.
-- `TANK_DETECTOR=local` forces the old in-process `rfdetr` path. Without it the board tries the Workflow and falls back to `rfdetr` if the Workflow does not load.
+- The Workflow is the board's only detector. The earlier in-process `rfdetr` path was removed on 12 October after the parity check below.
 
 What it measured, 12 October:
 
@@ -258,7 +212,7 @@ The first start downloaded the models in about 4 minutes over Wi-Fi. Later start
 
 ## 9. Rehearsal, 11 October 2026
 
-A full refill and a Classic brew from empty, 23:12 to 23:34, with the camera at night under room lights. Every frame and its box file from that run are in `/home/bs/rehearsal-2026-10-11/` on the Pi.
+A full refill and a Classic brew from empty, 23:12 to 23:34, with the camera at night under room lights. The refill sequence, frames 303 to 316 with their box files, is kept in `/home/bs/rehearsal-2026-10-11/` on the Pi.
 
 | Time | What the board recorded |
 |---|---|

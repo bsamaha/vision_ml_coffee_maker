@@ -125,88 +125,6 @@ _SCRIPT = f"""
 _ERROR_FILE = "board-error.txt"
 _MODE_FILE = "board-mode.txt"
 _WORKFLOW_MODE = "Roboflow Workflow on local Inference"
-_PHOTO = """
-#scene { container-type: size; }
-.shot { position: relative; flex: none; }
-.shot #frame {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 10px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, .6);
-}
-.overlay {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  font: 700 30px ui-sans-serif, system-ui, sans-serif;
-}
-.overlay rect { fill: none; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
-.overlay text { paint-order: stroke; stroke: rgba(0, 0, 0, .85); stroke-width: 7px; stroke-linejoin: round; }
-.overlay .reservoir rect { stroke: var(--info); fill: rgba(98, 172, 255, .06); }
-.overlay .reservoir text { fill: var(--info); }
-.overlay .liquid rect { stroke: var(--crema); fill: rgba(219, 168, 110, .16); }
-.overlay .liquid text { fill: #ffe2bf; }
-.overlay .surface { stroke: #fff1dc; stroke-width: 3; vector-effect: non-scaling-stroke; }
-.overlay .person rect { stroke: var(--ok); fill: rgba(63, 208, 127, .07); }
-.overlay .person text { fill: var(--ok); }
-.overlay .spare rect { stroke-dasharray: 4 4; opacity: .55; }
-.overlay .spare text { opacity: .55; }
-#board.no-boxes .overlay { display: none; }
-.boxes-toggle {
-  position: absolute;
-  z-index: 3;
-  top: 24px;
-  right: 24px;
-  padding: 7px 12px;
-  border: 1px solid rgba(98, 172, 255, .45);
-  border-radius: 999px;
-  background: rgba(10, 14, 20, .8);
-  color: #cfe4ff;
-  font: 700 11px/1 ui-sans-serif, system-ui, sans-serif;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.boxes-toggle[aria-pressed="false"] { border-color: var(--line); color: var(--muted); }
-#board-error { top: 64px; }
-@media (max-width: 860px) {
-  #scene { container-type: inline-size; }
-  .shot { width: 100% !important; }
-  .boxes-toggle { top: 16px; right: 16px; }
-}
-#frame[hidden],
-#hero[hidden] {
-  display: none !important;
-}
-#strip a {
-  flex: 1 1 0;
-  min-width: 0;
-  padding: 4px 4px 6px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--tile);
-  color: var(--muted);
-  cursor: pointer;
-  text-decoration: none;
-  transition: border-color .15s ease;
-}
-#strip a:hover { border-color: #3a414b; }
-#strip a[aria-current="page"] {
-  border-color: var(--crema);
-  box-shadow: 0 0 0 1px var(--crema);
-  color: var(--text);
-}
-#strip img {
-  display: block;
-  width: 100%;
-  height: 56px;
-  object-fit: cover;
-  border-radius: 6px;
-}
-"""
 _CUP_ICON = (
     '<svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">'
     '<path d="M3.5 9h13v4.5a6 6 0 0 1-6 6h-1a6 6 0 0 1-6-6z" fill="currentColor"/>'
@@ -797,15 +715,6 @@ def _one_decimal(ounces: _Ounces) -> str:
     return f"{sign}{whole}.{frac} fl oz"
 
 
-def _amount(tenths: int) -> str:
-    """0 is `0`. 100 is `10`. 25 is `2.5`. No suffix."""
-    sign = "-" if tenths < 0 else ""
-    whole, frac = divmod(abs(tenths), 10)
-    if frac == 0:
-        return f"{sign}{whole}"
-    return f"{sign}{whole}.{frac}"
-
-
 def _temp(tenths: int) -> str:
     sign = "-" if tenths < 0 else ""
     whole, frac = divmod(abs(tenths), 10)
@@ -832,33 +741,9 @@ def _timing_rows(timings: _Timings | None) -> tuple[tuple[str, str], ...]:
     return tuple(zip(labels, (*values, "0")))
 
 
-def _between(text: str, start: str, end: str, missing: str) -> str:
-    at = text.find(start)
-    if at < 0:
-        raise RuntimeError(missing)
-    stop = text.find(end, at + len(start))
-    if stop < 0:
-        raise RuntimeError(missing)
-    return text[at : stop + len(end)]
-
-
 @functools.cache
-def _specimen() -> str:
-    """CSS from `page/live.html` beside this file. The preview footer stays in that file."""
-    text = Path(__file__).with_name("live.html").read_text(encoding="utf-8")
-    return _between(text, "<style>", "</style>", "style block missing")
-
-
-@functools.cache
-def _hero() -> str:
-    text = Path(__file__).with_name("live.html").read_text(encoding="utf-8")
-    svg = _between(text, '<svg id="hero"', "</svg>", "hero svg missing")
-    svg = svg.replace(
-        'aria-label="Latest frame, 40.0 fluid ounces"',
-        'aria-label="Latest frame"',
-        1,
-    )
-    return svg.replace('<svg id="hero"', '<svg id="hero" hidden', 1)
+def _style() -> str:
+    return (Path(__file__).with_name("live.css")).read_text(encoding="utf-8")
 
 
 def _esc(value: str) -> str:
@@ -1071,7 +956,7 @@ def _html(
     device_html = "".join(stats)
     mode_html = ""
     if mode is not None:
-        tone = "mode" if mode == _WORKFLOW_MODE else "mode fallback"
+        tone = "mode" if mode == _WORKFLOW_MODE else "mode loading"
         mode_html = f'<span class="{tone}" id="device-mode">{_esc(mode)}</span>'
     captions = _captions(frames)
     strip = []
@@ -1109,7 +994,6 @@ def _html(
         '<i style="bottom: 75%"></i><i style="bottom: 50%"></i>'
         '<i class="alarm-line" style="bottom: 25%"></i></div>'
     )
-    style = _specimen()
     return (
         "<!doctype html>\n"
         '<html lang="en">\n'
@@ -1118,8 +1002,7 @@ def _html(
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         "<title>Coffee tank</title>\n"
         "<link rel=\"icon\" href=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23000'/%3E%3C/svg%3E\">\n"
-        f"{style}\n"
-        f"<style>{_PHOTO}</style>\n"
+        f"<style>{_style()}</style>\n"
         "</head>\n"
         "<body>\n"
         f'<main id="board"{board_class}>\n'
@@ -1159,7 +1042,6 @@ def _html(
         "</dl>\n"
         "</section>\n"
         '<div id="scene">\n'
-        f"{_hero()}\n"
         f"{photo}\n"
         f"{_flag('unverified', _UNVERIFIED, unverified)}\n"
         f"{_flag('stale-banner', _STALE, stale)}\n"

@@ -2148,26 +2148,6 @@ wheels = [
 ]
 
 [[package]]
-name = "rfdetr"
-version = "1.10.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
-    { name = "pydantic", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
-    { name = "pydeprecate", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
-    { name = "requests", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
-    { name = "supervision", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
-    { name = "torch", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
-    { name = "torchvision", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
-    { name = "tqdm", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
-    { name = "transformers", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/db/1a/03d0e4feeac35d7e463acf349746db512c738ec088121bd37bdfcb8ec39c/rfdetr-1.10.1.tar.gz", hash = "sha256:90632c4c528c254216c8cd2f8141bd93f88c6c4948adaaa621e464cfcf805c3a", size = 553604, upload-time = "2026-09-07T11:50:47.688Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/de/c1/54828a88cf087c2ed0f6029528c1373c0d79e81676fb9fc40a24c9750246/rfdetr-1.10.1-py3-none-any.whl", hash = "sha256:96fa7a8ecbcaeea5f5150ff0b503699d2d4d75a32a87eeabfc0ab90485076a52", size = 602697, upload-time = "2026-09-07T11:50:45.648Z" },
-]
-
-[[package]]
 name = "rich"
 version = "14.3.4"
 source = { registry = "https://pypi.org/simple" }
@@ -2500,8 +2480,6 @@ source = { virtual = "." }
 dependencies = [
     { name = "inference", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
     { name = "numpy", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
-    { name = "pillow", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
-    { name = "rfdetr", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
     { name = "torch", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
     { name = "torchvision", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
 ]
@@ -2510,8 +2488,6 @@ dependencies = [
 requires-dist = [
     { name = "inference", specifier = "==1.7.4" },
     { name = "numpy", specifier = "==2.3.5" },
-    { name = "pillow", specifier = "==12.3.0" },
-    { name = "rfdetr", specifier = "==1.10.1" },
     { name = "torch", specifier = "==2.14.1+cpu", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", specifier = "==0.29.1+cpu", index = "https://download.pytorch.org/whl/cpu" },
 ]

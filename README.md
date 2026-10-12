@@ -1,26 +1,35 @@
 # Publish a change
 
-You edit this directory on the PC. The Pi runs the commit you push.
+You edit this directory on the Mac. The Pi runs the commit you push. Login and network details are in [hardware.md](hardware.md); how the board works is in [technical-solution.md](technical-solution.md).
+
+## Test
+
+The tests use only the standard library, so they run without the Pi's packages:
+
+```sh
+for t in check/*_test.py page/*_test.py; do uv run --no-project python "$t"; done
+```
 
 ## Push the commit
 
 1. Commit the change.
-2. From this directory, run `git push pi main`.
-3. Wait until that command returns. The Pi restarts the capture page, and the command returns after port 8080 is open.
-4. Open http://raspberrypi.local:8080.
+2. Push: `GIT_SSH_COMMAND="sshpass -e ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password" git push pi main`, with the Pi's password in `SSHPASS`.
+3. Wait until that command returns. The hook installs the lock if it changed, restarts `check/board.py`, and returns once port 8080 is open.
+4. Open http://192.168.1.248:8080 and wait for the Raspberry Pi row to say Roboflow Workflow on local Inference.
 
-If the install fails, the push fails and the process that was already running stays up. If the new process fails to listen, read `/tmp/preview.log` on the Pi.
+If the install fails, the push fails and the board that was already running stays up. If the new board does not start, read `/tmp/preview.log` on the Pi.
+
+Do not push during the demo. A restart takes over a minute while `inference` imports and both models load.
 
 ## Change a dependency
 
 1. Edit the pin in `pyproject.toml`.
-2. From this directory, run `uv lock --python-preference managed`. The project only allows a system Python, and the Mac's is not 3.12; the lock does not depend on which interpreter wrote it.
-3. Commit `pyproject.toml` and `uv.lock` together.
-4. Push with the steps above.
+2. Run `uv lock --python-preference managed`. The project only allows a system Python, and the Mac's is not 3.12; the lock does not depend on which interpreter wrote it.
+3. Commit `pyproject.toml` and `uv.lock` together, then push.
 
-The Pi installs that lock into a slot under `/home/bs/tank-envs/slots/`. An unchanged lock skips the install. `torch` and `torchvision` come from the CPU index named in `pyproject.toml`.
+The Pi installs that lock into a slot under `/home/bs/tank-envs/slots/`, and an unchanged lock skips the install. `torch` and `torchvision` come from the CPU index named in `pyproject.toml`.
 
-A large install, such as the first one with `inference`, downloads hundreds of megabytes over the Pi's Wi-Fi, and the push's SSH session can drop partway through, which stops the hook. If that happens, the ref is already on the Pi. Run the hook there, detached from SSH, and watch its log:
+A large install downloads hundreds of megabytes over the Pi's Wi-Fi, and the push's SSH session can drop partway through, which stops the hook. The ref is already on the Pi by then. Run the hook there, detached from SSH, and watch its log:
 
 ```sh
 echo "0 <commit sha> refs/heads/<branch>" > /tmp/deploy.stdin
@@ -28,20 +37,12 @@ setsid nohup sh -c 'sh /home/bs/tank.git/hooks/post-receive < /tmp/deploy.stdin 
 tail -f /tmp/deploy.log
 ```
 
-The same command with an older commit is the rollback. It installs that commit's lock again if needed, from uv's cache, and restarts the board on it.
+The same command with an older commit is the rollback.
 
-## What the Pi updates
+## Change the Workflow
 
-`scripts/pi-receive` is the hook. A push checks that commit out into `/home/bs/tank`, installs the lock when the lock changed, and starts `check/board.py` with that slot's Python. That process owns the camera and serves the live board on port 8080. The earlier capture, preview, and compare pages are in `archive/check/`.
+`workflow/tank-gauge.json` is generated. After changing `check/tank_gauge.py`, `check/volume.py`, or `check/workflow.py`, run `python check/workflow.py --export workflow/tank-gauge.json`, commit the JSON, and paste it into the Roboflow Workflow editor so the app matches the Pi. A test fails if the committed JSON falls behind.
 
-uv on the Pi is `/home/bs/.local/bin/uv`. Git does not track the slot, the weights, or the API key. The Workflow's models are cached in `/home/bs/.inference/cache`, the fallback's weights are in `/home/bs/.roboflow/models/`, and the Roboflow API key is in `/home/bs/tank-envs/roboflow.env`. On the Mac the key is in `.env`, which `.gitignore` excludes.
+## What stays out of git
 
-The Workflow in `workflow/tank-gauge.json` is generated. After changing `check/tank_gauge.py`, `check/volume.py`, or `check/workflow.py`, run `python check/workflow.py --export workflow/tank-gauge.json`, commit the JSON, and paste it into the Roboflow Workflow editor so the app matches the Pi.
-
-## Leave the camera to that process
-
-Do not start `/home/bs/preview.py`. That file is an old copy. Do not start a second preview. One process owns `/dev/video0`.
-
-## Leave these files uncommitted
-
-Do not commit the slot, the weights, `train/` stills, `learn/`, or the kitchen photos. `.gitignore` already excludes a venv in this directory.
+The slot, `train/` stills, `learn/`, the kitchen photos, the Workflow's model cache in `/home/bs/.inference/cache`, and the Roboflow API key. On the Pi the key is in `/home/bs/tank-envs/roboflow.env`; on the Mac it is in `.env`, which `.gitignore` excludes. One process owns `/dev/video0`, so do not start anything else that opens the camera while the board is up.
