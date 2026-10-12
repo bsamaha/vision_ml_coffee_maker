@@ -86,7 +86,7 @@ What to say:
 
 - **The alert, live in the editor.** The alert version adds Continue If (under 17.5 fl oz), a box visualization, and an Email Notification block with the annotated photo attached. Drop in an empty-tank frame and the email arrives. Drop in a full one and nothing is sent. The Pi runs the version without email, because each email costs credits and the board already shows the alarm.
 
-Show: the Workflow in the Roboflow editor, the TankGauge block's code, then the alert version. Upload `.shots/rehearsal/00000303.jpg` (empty, nobody in view) and show the email arriving with its photo. Then upload `00000316.jpg` (full) and show that nothing is sent. Use one upload each: every email spends credits.
+Show: the Workflow in the Roboflow editor, the TankGauge block's code, then the alert version. Upload `workflow/samples/empty.jpg` (empty, nobody in view) and show the email arriving with its photo. Then upload `workflow/samples/full.jpg` and show that nothing is sent. Use one upload each: every email spends credits.
 
 ## 5. Deployment with Roboflow Inference, and the insights
 
@@ -151,6 +151,6 @@ Next steps:
 - Reset the board, as in section 7 of [technical-solution.md](technical-solution.md), and wait for "Roboflow Workflow on local Inference" in green.
 - Machine ready: about 40 fl oz in the reservoir, carafe seated and empty, WARM and 1-4 CUP off.
 - Tabs open: the board, the Roboflow project's dataset and a labeled image, the trained model's version page, the Workflow in the editor, the alert Workflow with `alert_email` filled in, and your inbox.
-- Files ready to upload: `.shots/rehearsal/00000303.jpg` (empty) and `00000316.jpg` (full).
+- Files ready to upload: `workflow/samples/empty.jpg` and `workflow/samples/full.jpg`.
 - A backup in case the live board fails: screenshots of the board mid-brew and after a refill, and the rehearsal's refill frames.
 - Don't push code during the call. A restart takes about a minute.

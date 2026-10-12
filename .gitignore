@@ -13,3 +13,5 @@ train/
 .venv/
 nano-venv/
 .roboflow/
+.shots/
+.DS_Store
