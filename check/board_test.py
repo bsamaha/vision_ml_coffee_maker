@@ -131,6 +131,24 @@ class BoardTests(unittest.TestCase):
         zone.write_text("warm\n", encoding="utf-8")
         self.assertIsNone(board.temp_c(zone))
 
+    def test_cpu_use_and_free_memory_come_from_proc(self):
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        folder = Path(held.name)
+        stat = folder / "stat"
+        stat.write_text("cpu  100 0 100 700 100 0 0 0 0 0\ncpu0 1 2 3 4\n", encoding="utf-8")
+        before = board.cpu_times(stat)
+        self.assertEqual(before, (800, 1000))
+        stat.write_text("cpu  400 0 200 900 100 0 0 0 0 0\n", encoding="utf-8")
+        after = board.cpu_times(stat)
+        self.assertEqual(board.cpu_pct(before, after), 66.7)
+        self.assertIsNone(board.cpu_pct(None, after))
+        self.assertIsNone(board.cpu_pct(after, after))
+        meminfo = folder / "meminfo"
+        meminfo.write_text("MemTotal:  3875000 kB\nMemFree:  500000 kB\nMemAvailable:  2402500 kB\n", encoding="utf-8")
+        self.assertEqual(board.mem_free_pct(meminfo), 62.0)
+        self.assertIsNone(board.mem_free_pct(folder / "missing"))
+
     def test_the_reading_keeps_memory_temperature_and_frame_age(self):
         held = tempfile.TemporaryDirectory()
         self.addCleanup(held.cleanup)
@@ -146,11 +164,15 @@ class BoardTests(unittest.TestCase):
                 board.Elapsed(capture_ms=180, tank_ms=3700, person_ms=3690),
                 memory_mb=793,
                 cpu_c=78.9,
+                cpu_use=48.5,
+                memory_free=61.2,
             )
-            row = db.execute("SELECT ts, capture_ms, rss_mb, temp_c FROM reading").fetchone()
+            row = db.execute(
+                "SELECT ts, capture_ms, rss_mb, temp_c, cpu_pct, mem_free_pct FROM reading"
+            ).fetchone()
         finally:
             db.close()
-        self.assertEqual(tuple(row), ("2026-10-12T12:00:00-05:00", 180, 793, 78.9))
+        self.assertEqual(tuple(row), ("2026-10-12T12:00:00-05:00", 180, 793, 78.9, 48.5, 61.2))
 
     def test_empty_jpeg_writes_nothing(self):
         held = tempfile.TemporaryDirectory()

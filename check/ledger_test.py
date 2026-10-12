@@ -165,6 +165,21 @@ class LedgerTests(unittest.TestCase):
         names = {row[0] for row in again.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
         self.assertEqual(names, {"reading_day"})
 
+    def test_connect_adds_the_device_columns_to_an_older_file(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = Path(folder.name) / "tank.sqlite"
+        old = ledger.connect(path)
+        old.execute("ALTER TABLE reading DROP COLUMN cpu_pct")
+        old.execute("ALTER TABLE reading DROP COLUMN mem_free_pct")
+        old.close()
+        db = self.reconnect(path)
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(reading)")}
+        self.assertLessEqual({"cpu_pct", "mem_free_pct"}, columns)
+        ledger.tick(db, ledger.Tick(at("12:00"), 40, False, 0, 0, 0, 0, None, None, 30.0, 60.0))
+        row = db.execute("SELECT cpu_pct, mem_free_pct FROM reading").fetchone()
+        self.assertEqual(tuple(row), (30.0, 60.0))
+
     def test_total_ms_adds_the_fold_time(self):
         _folder, _path, db = self.db()
         ledger.tick(db, ledger.Tick(at("12:00"), 40, False, 3, 4, 5, 6, 12, 21.5))
@@ -1453,6 +1468,32 @@ class LedgerTests(unittest.TestCase):
         machine = self.ticks(db, "12:01", (0, 34.0, 32.0))
         self.assertEqual(tenths(machine.booked_oz), 320)
         self.assertEqual(machine.activity, "brewing")
+
+    def test_lifting_it_and_walking_out_between_ticks_is_a_take(self):
+        _folder, _path, db = self.db()
+        self.ticks(db, "12:00", (40.0, 40.0))
+        machine = self.ticks(db, "12:01", (40.0,), person=True)
+        self.assertEqual(machine.activity, "idle")
+        machine = self.ticks(db, "12:02", (None,))
+        self.assertEqual(machine.activity, "idle")
+        machine = self.ticks(db, "12:03", (None,))
+        self.assertEqual(machine.activity, "out")
+        self.assertTrue(machine.reservoir_out)
+        self.assertEqual(tenths(machine.taken_oz), 400)
+        machine = self.ticks(db, "12:05", (70.0,))
+        self.assertEqual(tenths(machine.booked_oz), 700)
+        self.assertEqual(machine.refills_today, 1)
+        self.assertEqual(tenths(machine.filled_oz), 300)
+
+    def test_a_person_gone_two_ticks_before_the_miss_is_not_a_take(self):
+        _folder, _path, db = self.db()
+        self.ticks(db, "12:00", (40.0,), person=True)
+        self.ticks(db, "12:01", (40.0, 40.0))
+        machine = self.ticks(db, "12:02", (None, None, None, None))
+        self.assertEqual(machine.activity, "idle")
+        self.assertFalse(machine.reservoir_out)
+        got = db.execute("SELECT gap_ticks, gap_person FROM machine").fetchone()
+        self.assertEqual(tuple(got), (4, 0))
 
     def test_the_kept_fold_matches_a_full_replay(self):
         _folder, path, db = self.db()

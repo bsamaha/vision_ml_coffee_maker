@@ -47,6 +47,8 @@ class Tick(NamedTuple):
     gauge_ms: int
     rss_mb: int | None
     temp_c: float | None
+    cpu_pct: float | None = None
+    mem_free_pct: float | None = None
 
 
 class Machine(NamedTuple):
@@ -135,6 +137,10 @@ def connect(path: str | Path) -> sqlite3.Connection:
     # Files made before schema.sql dropped these. Nothing reads them, and each costs a page a tick.
     db.execute("DROP INDEX IF EXISTS reading_ts")
     db.execute("DROP INDEX IF EXISTS event_id_desc")
+    columns = {row["name"] for row in db.execute("PRAGMA table_info(reading)")}
+    for column in ("cpu_pct", "mem_free_pct"):
+        if column not in columns:
+            db.execute(f"ALTER TABLE reading ADD COLUMN {column} REAL")
     return db
 
 
@@ -366,7 +372,9 @@ def _step(
         pass
     elif gauge is None and not reservoir_out:
         gap_ticks += 1
-        if person:
+        # A person seen just before the reservoir vanished counts. Someone who lifts it and
+        # walks out between two ticks is never in a frame without it.
+        if person or person_open:
             gap_person = True
         if gap_ticks >= 2 and gap_person and booked is not None:
             taken = booked
@@ -563,8 +571,8 @@ def _write(
         INSERT INTO reading (
             ts, day, gauge_oz, booked_oz, person,
             capture_ms, tank_ms, person_ms, gauge_ms, ledger_ms, total_ms,
-            rss_mb, temp_c
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            rss_mb, temp_c, cpu_pct, mem_free_pct
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             ts,
@@ -580,6 +588,8 @@ def _write(
             total_ms,
             one.rss_mb,
             one.temp_c,
+            one.cpu_pct,
+            one.mem_free_pct,
         ),
     )
     started = fold.activity_started.isoformat()

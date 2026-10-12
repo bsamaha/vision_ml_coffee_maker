@@ -277,7 +277,22 @@ body {
 
 /* Dock */
 #dock { grid-column: 1 / -1; padding: 10px 12px; }
-.dock-row { display: flex; align-items: flex-start; gap: 12px; }
+.dock-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
+.device { flex: 1; min-width: 0; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.device-title { margin: 0; font-size: 12px; font-weight: 800; white-space: nowrap; }
+.device-title span { display: block; font-size: 10px; font-weight: 600; color: var(--muted); }
+.device-stats { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 0; }
+.device-stats div { display: flex; flex-direction: column; gap: 2px; }
+.device-stats dt {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.device-stats dd { margin: 0; font-size: 15px; font-weight: 750; }
+.device-stats dd.warm { color: var(--warn); }
+.device-stats dd.hot { color: var(--alarm); }
 .ticks span {
   font-size: 10px;
   font-weight: 700;
@@ -285,8 +300,9 @@ body {
   text-transform: uppercase;
   color: var(--muted);
 }
-.diag { flex: 1; min-width: 0; }
+.diag { flex: none; }
 .diag summary { display: inline-block; }
+.diag[open] { flex-basis: 100%; order: 2; }
 .diag summary {
   cursor: pointer;
   list-style: none;
@@ -461,6 +477,17 @@ body {
 
   <footer id="dock">
     <div class="dock-row">
+      <section class="device" aria-label="Raspberry Pi">
+        <p class="device-title">Raspberry Pi 4 <span>model times and CPU use averaged over 2 min</span></p>
+        <dl class="device-stats">
+          <div><dt>CPU use</dt><dd id="device-cpu">48%</dd></div>
+          <div><dt>CPU temp</dt><dd id="device-temp">62.8°C</dd></div>
+          <div><dt>Memory free</dt><dd id="device-memory">61%</dd></div>
+          <div><dt>Tank model</dt><dd id="device-tank">1.87 s</dd></div>
+          <div><dt>Person model</dt><dd id="device-person">1.83 s</dd></div>
+          <div><dt>Reading every</dt><dd id="device-every">7.5 s</dd></div>
+        </dl>
+      </section>
       <details class="diag" id="diag">
         <summary>Timing</summary>
         <ul class="ticks" id="ticks">

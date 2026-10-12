@@ -405,6 +405,54 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(live._captions(frames), ("-1:08", "-1:00", "-15 s", "Now"))
         self.assertEqual(live._captions(()), ())
 
+    def test_the_device_row_averages_the_last_two_minutes(self):
+        folder = self.folder()
+        path, frames = self.database(folder)
+        db = ledger.connect(path)
+        try:
+            start = at("12:00")
+            for index in range(20):
+                when = start + timedelta(seconds=7.5 * index)
+                slow = 4000 if index < 3 else 1800 + index
+                ledger.tick(
+                    db,
+                    ledger.Tick(when, 40.0, False, 100, slow, 1830, 0, 770, 60.0 + index / 10, 40.0 + index, 61.0),
+                )
+        finally:
+            db.close()
+        page = self.page(path, frames)
+        # Readings 3..19 fall in the two minutes ending at the newest one (12:02:22.5).
+        self.assertEqual(node(page, "device-tank"), "1.81 s")
+        self.assertEqual(node(page, "device-person"), "1.83 s")
+        self.assertEqual(node(page, "device-cpu"), "51%")
+        self.assertEqual(node(page, "device-temp"), "61.9\u00b0C")
+        self.assertEqual(node(page, "device-memory"), "61%")
+        self.assertEqual(node(page, "device-every"), "7.5 s")
+        self.assertNotIn("class=", opening(page, "device-temp"))
+
+    def test_a_hot_pi_turns_the_temperature_red(self):
+        folder = self.folder()
+        path, frames = self.database(folder)
+        db = ledger.connect(path)
+        try:
+            ledger.tick(db, ledger.Tick(at("12:00"), 40.0, False, 0, 0, 0, 0, None, 80.4))
+        finally:
+            db.close()
+        self.assertIn('class="hot"', opening(self.page(path, frames), "device-temp"))
+
+    def test_a_file_without_the_device_columns_still_loads(self):
+        folder = self.folder()
+        path, frames = self.database(folder)
+        self.fill(path, [("12:00", 40, False)])
+        db = ledger.connect(path)
+        db.execute("ALTER TABLE reading DROP COLUMN cpu_pct")
+        db.execute("ALTER TABLE reading DROP COLUMN mem_free_pct")
+        db.close()
+        page = self.page(path, frames)
+        self.assertEqual(node(page, "ounces"), "40.0 fl oz")
+        self.assertEqual(node(page, "device-cpu"), "")
+        self.assertEqual(node(page, "device-memory"), "")
+
     def test_elapsed_shows_hours(self):
         start = at("09:00")
         self.assertEqual(live._elapsed(start, start + timedelta(seconds=90)), "1:30")

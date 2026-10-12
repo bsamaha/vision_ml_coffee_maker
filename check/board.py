@@ -23,7 +23,17 @@ import ledger
 import loop
 import sight
 
-__all__ = ["tick", "main", "Elapsed", "thinned", "rss_mb", "temp_c"]
+__all__ = [
+    "tick",
+    "main",
+    "Elapsed",
+    "thinned",
+    "rss_mb",
+    "temp_c",
+    "cpu_times",
+    "cpu_pct",
+    "mem_free_pct",
+]
 
 CHICAGO = ZoneInfo("America/Chicago")
 # The webcam only offers 1280x720 MJPEG at 60 fps, whatever -framerate asks for.
@@ -69,6 +79,42 @@ def temp_c(zone: Path = Path("/sys/class/thermal/thermal_zone0/temp")) -> float 
         return None
 
 
+def cpu_times(stat: Path = Path("/proc/stat")) -> tuple[int, int] | None:
+    """(idle, total) jiffies across all cores. Idle includes iowait."""
+    try:
+        fields = stat.read_text(encoding="utf-8").splitlines()[0].split()
+        if fields[0] != "cpu":
+            return None
+        counts = [int(value) for value in fields[1:9]]
+    except (OSError, ValueError, IndexError):
+        return None
+    return counts[3] + counts[4], sum(counts)
+
+
+def cpu_pct(before: tuple[int, int] | None, after: tuple[int, int] | None) -> float | None:
+    """Whole-Pi CPU use between two `cpu_times` samples."""
+    if before is None or after is None:
+        return None
+    total = after[1] - before[1]
+    if total <= 0:
+        return None
+    return round(100 * (1 - (after[0] - before[0]) / total), 1)
+
+
+def mem_free_pct(meminfo: Path = Path("/proc/meminfo")) -> float | None:
+    values: dict[str, int] = {}
+    try:
+        for line in meminfo.read_text(encoding="utf-8").splitlines():
+            key, _, rest = line.partition(":")
+            if key in ("MemTotal", "MemAvailable"):
+                values[key] = int(rest.split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+    if values.get("MemTotal", 0) <= 0 or "MemAvailable" not in values:
+        return None
+    return round(100 * values["MemAvailable"] / values["MemTotal"], 1)
+
+
 def detections(
     boxes: Sequence[sight.Box], seen: sight.Seen, size: tuple[int, int]
 ) -> dict:
@@ -104,6 +150,8 @@ def tick(
     size: tuple[int, int] = (1280, 720),
     memory_mb: int | None = None,
     cpu_c: float | None = None,
+    cpu_use: float | None = None,
+    memory_free: float | None = None,
 ) -> ledger.Applied:
     started = time.perf_counter()
     seen = sight.seen(boxes)
@@ -118,6 +166,8 @@ def tick(
         gauge_ms=gauge_ms,
         rss_mb=memory_mb,
         temp_c=cpu_c,
+        cpu_pct=cpu_use,
+        mem_free_pct=memory_free,
     )
     return loop.record(db, frames, jpeg, one, detections(boxes, seen, size))
 
@@ -280,6 +330,7 @@ def main() -> None:
         last_seq = -1
         waiting_since = time.monotonic()
         next_tick = 0.0
+        last_cpu = cpu_times()
         while True:
             early = next_tick - time.monotonic()
             if early > 0:
@@ -298,6 +349,9 @@ def main() -> None:
             next_tick = waiting_since + MIN_TICK_S
             try:
                 passes = detect(models, grab.jpeg)
+                now_cpu = cpu_times()
+                use = cpu_pct(last_cpu, now_cpu)
+                last_cpu = now_cpu
                 tick(
                     db,
                     frames,
@@ -312,6 +366,8 @@ def main() -> None:
                     passes.size,
                     rss_mb(),
                     temp_c(),
+                    use,
+                    mem_free_pct(),
                 )
             except Exception as error:
                 traceback.print_exc()

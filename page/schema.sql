@@ -13,6 +13,7 @@ PRAGMA foreign_keys = ON;
 -- Later seated ticks scale gauge_oz onto 0..70 from the fill's gauge. A still gauge leaves 70 in place.
 -- ts is when the camera took the photo. capture_ms is how old that photo was when the tick took it.
 -- rss_mb is the board process's resident memory. temp_c is the Pi's CPU temperature.
+-- cpu_pct is whole-Pi CPU use since the previous tick. mem_free_pct is MemAvailable over MemTotal.
 CREATE TABLE reading (
   id INTEGER PRIMARY KEY,
   ts TEXT NOT NULL,
@@ -27,7 +28,9 @@ CREATE TABLE reading (
   ledger_ms INTEGER NOT NULL,
   total_ms INTEGER NOT NULL,
   rss_mb INTEGER,
-  temp_c REAL
+  temp_c REAL,
+  cpu_pct REAL,
+  mem_free_pct REAL
 );
 
 CREATE INDEX reading_day ON reading (day);

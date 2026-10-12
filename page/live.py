@@ -17,7 +17,7 @@ import math
 import sqlite3
 import threading
 import urllib.parse
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from email.utils import formatdate, parsedate_to_datetime
 from enum import Enum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -48,6 +48,9 @@ _UNVERIFIED = "Level jumped without a refill. Not billed. Confirming."
 _REVIEW = "Earlier frame. The numbers stay live."
 _DOT = "\u00b7"
 _EVENTS = 50
+_DEVICE_WINDOW = timedelta(minutes=2)
+# Readings read for the device row. 2 minutes at the 7.5 s floor is 16, so this always covers it.
+_DEVICE_ROWS = 40
 # Seconds between polls, and the reading age past which the board says it is not updating.
 _POLL_S = 3
 _LAG_S = 30
@@ -251,6 +254,18 @@ class _Timings(NamedTuple):
     temp_tenths: int | None
 
 
+class _Device(NamedTuple):
+    """The Pi over the readings of the last `_DEVICE_WINDOW`. None where no reading had it."""
+
+    cpu_pct: float | None
+    temp_c: float | None
+    mem_free_pct: float | None
+    tank_ms: int | None
+    person_ms: int | None
+    every_s: float | None
+    count: int
+
+
 class _Live(NamedTuple):
     """Facts from the machine row plus the newest reading."""
 
@@ -271,6 +286,7 @@ class _Live(NamedTuple):
     stale: bool
     unverified: bool
     timings: _Timings
+    device: _Device
 
 
 class _LogLine(NamedTuple):
@@ -530,13 +546,11 @@ def _load(db: Path, frames: Path) -> _Quiet | _Shown:
                 FROM machine WHERE id = 1
                 """
             ).fetchone()
-            reading = conn.execute(
-                """
-                SELECT ts, gauge_oz, capture_ms, tank_ms, person_ms, gauge_ms,
-                       ledger_ms, total_ms, rss_mb, temp_c
-                FROM reading ORDER BY id DESC LIMIT 1
-                """
-            ).fetchone()
+            # SELECT * so a file the board has not migrated yet still loads without the new columns.
+            recent = conn.execute(
+                "SELECT * FROM reading ORDER BY id DESC LIMIT ?", (_DEVICE_ROWS,)
+            ).fetchall()
+            reading = recent[0] if recent else None
             if machine is None or reading is None:
                 return _Quiet(shots)
             tick_at = datetime.fromisoformat(str(reading["ts"]))
@@ -590,6 +604,7 @@ def _load(db: Path, frames: Path) -> _Quiet | _Shown:
                 rss_mb=None if rss is None else int(rss),
                 temp_tenths=None if temp is None else round(float(temp) * 10),
             ),
+            device=_device(recent, tick_at),
         )
         log = tuple(
             _LogLine(datetime.fromisoformat(str(row["ts"])), str(row["kind"]), str(row["message"]))
@@ -599,6 +614,61 @@ def _load(db: Path, frames: Path) -> _Quiet | _Shown:
         return _Shown(live, log, logged, shots)
     finally:
         conn.close()
+
+
+def _column(row: sqlite3.Row, name: str) -> float | None:
+    if name not in row.keys() or row[name] is None:
+        return None
+    return float(row[name])
+
+
+def _device(rows: list[sqlite3.Row], tick_at: datetime) -> _Device:
+    """CPU use and model times averaged over the last two minutes. Temperature and memory are the newest."""
+    since = tick_at - _DEVICE_WINDOW
+    window = [row for row in rows if datetime.fromisoformat(str(row["ts"])) >= since]
+
+    def mean(name: str) -> float | None:
+        values = [value for value in (_column(row, name) for row in window) if value is not None]
+        return sum(values) / len(values) if values else None
+
+    times = sorted(datetime.fromisoformat(str(row["ts"])) for row in window)
+    every = None
+    if len(times) > 1:
+        every = (times[-1] - times[0]).total_seconds() / (len(times) - 1)
+    tank = mean("tank_ms")
+    person = mean("person_ms")
+    return _Device(
+        cpu_pct=mean("cpu_pct"),
+        temp_c=_column(rows[0], "temp_c"),
+        mem_free_pct=_column(rows[0], "mem_free_pct"),
+        tank_ms=None if tank is None else round(tank),
+        person_ms=None if person is None else round(person),
+        every_s=every,
+        count=len(window),
+    )
+
+
+def _device_rows(device: _Device | None) -> tuple[tuple[str, str, str], ...]:
+    """(id, label, value). Blank values on a quiet board."""
+
+    def seconds(ms: int | None) -> str:
+        return "" if ms is None else f"{ms / 1000:.2f} s"
+
+    def percent(value: float | None) -> str:
+        return "" if value is None else f"{value:.0f}%"
+
+    if device is None:
+        device = _Device(None, None, None, None, None, None, 0)
+    temp = "" if device.temp_c is None else f"{device.temp_c:.1f}\u00b0C"
+    every = "" if device.every_s is None else f"{device.every_s:.1f} s"
+    return (
+        ("device-cpu", "CPU use", percent(device.cpu_pct)),
+        ("device-temp", "CPU temp", temp),
+        ("device-memory", "Memory free", percent(device.mem_free_pct)),
+        ("device-tank", "Tank model", seconds(device.tank_ms)),
+        ("device-person", "Person model", seconds(device.person_ms)),
+        ("device-every", "Reading every", every),
+    )
 
 
 def _band(booked: _Ounces) -> _Band:
@@ -921,6 +991,16 @@ def _html(
     board_class = f' class="{" ".join(classes)}"' if classes else ""
     mark = "Earlier frame" if earlier else "Live"
     tick_html = "".join(f"<li><span>{_esc(label)}</span><b>{_esc(value)}</b></li>" for label, value in timings)
+    device = None if isinstance(board, _Quiet) else board.live.device
+    heat = ""
+    if device is not None and device.temp_c is not None:
+        # The Pi 4 soft-throttles at 80 C.
+        heat = "hot" if device.temp_c >= 80 else "warm" if device.temp_c >= 75 else ""
+    stats = []
+    for element_id, label, value in _device_rows(device):
+        tone = f' class="{heat}"' if element_id == "device-temp" and heat else ""
+        stats.append(f'<div><dt>{_esc(label)}</dt><dd id="{element_id}"{tone}>{_esc(value)}</dd></div>')
+    device_html = "".join(stats)
     captions = _captions(frames)
     strip = []
     for index, (frame, caption) in enumerate(zip(frames, captions)):
@@ -1034,6 +1114,10 @@ def _html(
         "</section>\n"
         '<footer id="dock">\n'
         '<div class="dock-row">\n'
+        '<section class="device" aria-label="Raspberry Pi">\n'
+        '<p class="device-title">Raspberry Pi 4 <span>model times and CPU use averaged over 2 min</span></p>\n'
+        f'<dl class="device-stats">{device_html}</dl>\n'
+        "</section>\n"
         '<details class="diag" id="diag">\n'
         "<summary>Timing</summary>\n"
         f'<ul class="ticks" id="ticks">{tick_html}</ul>\n'
