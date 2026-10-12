@@ -66,15 +66,16 @@ On this proof a fill looks like this:
 
 | Moment | What the frame shows | Booked level |
 |---|---|---|
-| Taken | The reservoir has been missing for two ticks, and a person was on one of them | Ounces saved when it left |
+| Taken | The reservoir has been missing for two ticks, and a person was on one of them or was seen just before it disappeared | Ounces saved when it left |
 | Return | The reservoir is back, a liquid line is present, no person is in the picture, and the line is at least 3.5 fl oz higher | 70 fl oz |
 
-The model reading is stored beside the 70. The coffee bill uses 70 minus the saved ounces, at $0.50 a cup (5 fl oz). From the alarm, about 16 fl oz, that bill is about $5.40.
+The model reading is stored beside the 70. The coffee bill uses 70 minus the saved ounces, at $0.50 a cup (5 fl oz). From the alarm, about 16 fl oz, that bill is about $5.40. From empty, as in the 11 October rehearsal, it is $7.00.
 
-- **Ounces out.** The page sums the booked ounces that fell. It shows ounces out in the last 15 minutes and ounces out today. A rise, including the jump to 70, adds 0. There is no weekly rate.
+- **Ounces used.** The page sums the booked ounces that fell, in the last 15 minutes and today. A rise, including the jump to 70, adds 0, and a wobble of up to 2 fl oz is not counted twice. In the rehearsal a full tank brewed to empty read 70.0 fl oz used, exactly what went in. There is no weekly rate.
+- **Use rate and time to empty.** The page shows the net fall per minute over the last 2 minutes and how long the tank lasts at that rate. On the well, the same rate over days is the consumption baseline the stopped-pump check compares against, and the time to empty is when the next delivery is due.
 - **Anomalies.** A day with little or no drop means the treatment may have stopped. A low level means a refill is due. A rise while nobody took the tank updates the level after the quiet-jump hold, and it does not bill.
 
-The photos and the log belong to Company X. The model runs on the site computer. On this proof the newest 8 frames stay on the Pi. The well product would send the log and the fill photos.
+The photos and the log belong to Company X. The model runs on the site computer. On this proof the newest 8 frames stay on the Pi, each with the boxes the models found, and the board draws the reservoir, water line, and person boxes over the photo. The well product would send the log and the fill photos.
 
 ### How long a well can go untreated
 
@@ -114,7 +115,7 @@ The sensor is only an option if there is a spare port on this box or on the site
 
 ### Hardware per site (one-time)
 
-A site needs a camera, a small computer to run the model, and a cellular connection. A GPU isn't necessary. The model reads one image every few minutes, and RF-DETR Nano takes about [0.7 seconds per image on a Raspberry Pi 5 and about 2.2 seconds on a Pi 4-class chip](https://camertronix.com/benchmarking-yolov9-and-rf-detr-on-pi-4-and-5/). Roboflow's inference server [supports both](https://inference.roboflow.com/install/raspberry-pi/).
+A site needs a camera, a small computer to run the model, and a cellular connection. A GPU isn't necessary. The model reads one image every few minutes, and RF-DETR Nano takes about [0.7 seconds per image on a Raspberry Pi 5 and about 2.2 seconds on a Pi 4-class chip](https://camertronix.com/benchmarking-yolov9-and-rf-detr-on-pi-4-and-5/). Roboflow's inference server [supports both](https://inference.roboflow.com/install/raspberry-pi/). This proof measured about 1.9 seconds per RF-DETR Nano pass on its Raspberry Pi 4 CPU at 1280×720, running two models every 7.5 seconds at about 50% CPU and 62 °C.
 
 | Part | Price | Source |
 |---|---|---|
@@ -200,18 +201,29 @@ These add value, but they can't be measured before the cameras go up, so they're
 
 ## The proof of concept
 
-The lab setup is the Ninja reservoir, not a small copy of the well. A brew empties that reservoir. On a pad the pump does not. The screen shows the booked level, ounces out in the last 15 minutes, ounces out today, person visits, refills, a coffee bill, and a refill alarm.
+The lab setup is the Ninja reservoir, not a small copy of the well. A brew empties that reservoir. On a pad the pump does not. The screen shows the booked level, ounces used in the last 15 minutes and today, the use rate and time to empty, person visits, refills, a coffee bill, and a refill alarm, with the model's boxes drawn over the camera photo and the Pi's own CPU, temperature, memory, and model times underneath.
 
-The kitchen reports a measured error. It does not have a pass line. The error is the average absolute difference, in percent of full, on weighed fills at or above 25%. Under 25% full (17.5 fl oz on this 70 fl oz reservoir) is the refill alarm. Both ounce totals at 0 are normal and are not the alarm. The 3% field target above is the well, and it is not the kitchen gate.
+The kitchen reports a measured error. It does not have a pass line. The error is the average absolute difference, in percent of full, on cup-line fills at or above 25%. Under 25% full (17.5 fl oz on this 70 fl oz reservoir) is the refill alarm. Both Used tiles at 0 are normal and are not the alarm. The 3% field target above is the well, and it is not the kitchen gate.
+
+The accuracy experiment recorded three rounds of 4, 6, 8, 10, and 14 cups. Each round was scored with a cup table built from the other two, so no round grades itself:
+
+- **4 to 10 cups:** an average error of **2.4% of full** over 12 readings, worst 12.1%. Nine of the twelve were within 1.5%.
+- **14 cups, a full clear tank:** the weak point. In two of three rounds the model read it as about 74% full. The surface of clear water at the very top is hard to see. The 11 October rehearsal hit it once, a refill frame that read 52.5 of 70 fl oz.
+
+The ledger is built around that weakness. A refill books 70 fl oz whatever the model reads, the highest settled reading after the refill becomes the full mark, and later readings are scaled to it, so an empty tank still reaches 0 and the alarm still fires. On the well, a tank that sits full after delivery is the same case, and a strapping table calibrated on site at the top of the tank would be part of commissioning.
 
 The demo shows:
 
 - **The measured error** on fills at or above 25% full.
-- **A person visit** with the reservoir still in the picture, logged on its own. That visit does not bill.
-- **A refill.** The reservoir leaves and comes back at least 3.5 fl oz higher. The page books 70 fl oz. The bill is 70 minus the ounces saved when it left, at $0.50 a cup. The model reading stays beside the 70.
+- **A person visit** with the reservoir still in the picture, logged on its own, with the person box on the photo. That visit does not bill.
+- **A refill.** The reservoir leaves the frame and comes back at least 3.5 fl oz higher. The page books 70 fl oz. The bill is 70 minus the ounces saved when it left, at $0.50 a cup. The model reading stays beside the 70.
+- **Consumption.** A brew reads as Brewing within about 40 seconds of the level starting to fall, Used today follows the drop, and the use rate and time to empty update as it goes.
 - **The refill alarm** once a brew drops the reservoir under 17.5 fl oz.
-- **The photos** stay on the Pi. The page shows the newest 8 frames.
+- **The photos** stay on the Pi. The page shows the newest 8 frames, each with its detection boxes.
+- **The edge device.** Two RF-DETR Nano models on a Raspberry Pi 4's CPU, about 1.9 seconds each, a reading every 7.5 seconds, at about 50% CPU and 62 °C.
 
-A clear reservoir indoors will read more cleanly than a tank outdoors. Outdoor accuracy, summer heat, and uptime on solar still have to be confirmed on real tanks.
+In the 11 October rehearsal a full tank was taken, refilled, and brewed to empty. The board booked the refill at $7.00, showed Brewing for the whole brew, raised the alarm at 17.4 fl oz, and ended at 0 fl oz with 70.0 fl oz used, exactly what went in.
 
-On the well, the 3% target is what makes one prevented failure pay for the hardware across dozens of sites. The kitchen number is whatever the accuracy experiment writes down.
+A clear reservoir indoors will read more cleanly than a tank outdoors. Outdoor accuracy, summer heat, and uptime on solar still have to be confirmed on real tanks. The Pi in this kitchen already reached 79 °C at full load indoors before its camera feed was trimmed, so heat in a Permian enclosure is a real design input.
+
+On the well, the 3% target is what makes one prevented failure pay for the hardware across dozens of sites. The kitchen measured 2.4% of full between 4 and 10 cups. That is not the field number, and the full tank still needs the ledger's help.

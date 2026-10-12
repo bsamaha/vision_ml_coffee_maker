@@ -10,9 +10,9 @@ The camera stays where it is. It looks at the graduated face from a little above
 
 The camera body is upside down. There is no flip control on the device. Every still and the live page use `hflip,vflip`. The process on port 8080 is `check/board.py`, started by `scripts/pi-receive`. It owns `/dev/video0`. Open [http://192.168.1.248:8080](http://192.168.1.248:8080). The earlier pages are in `archive/check/`. Do not start one of them while the board is up.
 
-The person model is the COCO RF-DETR Nano. One 1280×720 frame took about 4.4 seconds on 9 October 2026. The tank model is the fine-tuned RF-DETR Nano, with classes `Reservoir` and `liquid-level`. Ounces come from `check/volume.py`. The live page rules are in section 6.
+The person model is the COCO RF-DETR Nano. The tank model is the fine-tuned RF-DETR Nano, with classes `Reservoir` and `liquid-level`. Both run on the Pi's CPU. On 9 October one 1280×720 person pass took about 4.4 seconds while `ffmpeg` was flipping and encoding 60 frames a second. On 11 October, with the board's `ffmpeg` thinned to 2 frames a second, each pass takes about 1.85 seconds. Ounces come from `check/volume.py`. The live page rules are in section 6.
 
-Both ounce totals at 0 are normal. The refill alarm is under 17.5 fl oz. Accuracy is only figured on readings at or above 25%.
+Used, last 15 min and Used today at 0.0 fl oz are normal. The refill alarm is under 17.5 fl oz. Accuracy is only figured on readings at or above 25%.
 
 ## Traps
 
@@ -25,7 +25,8 @@ Both ounce totals at 0 are normal. The refill alarm is under 17.5 fl oz. Accurac
 - Set WARM to 0 and wait until the machine is off before pouring. With the plate on, water added to the reservoir starts another brew, so the pour and the pump run together.
 - 1-4 CUP does not stop at 4 cups. Leave it off.
 - The carafe is seated and empty before a brew. If it is missing or already full, the basket overflows.
-- The brew pauses at the start, then continues. During that pause both ounce totals can stay 0. That is not the alarm.
+- The brew pauses at the start, then continues. During that pause both Used tiles can stay 0. That is not the alarm.
+- Do not stand between the camera and the reservoir for more than about 15 seconds. Two ticks with the reservoir hidden and a person in view read as a take, then a put-back once you step away. The level is not changed, but two extra lines land in the log.
 - A visit is the person class only. A chair box is not a visit. Section 6 is the live person rule. This list does not define a fill.
 - Do not read the line while a person covers the reservoir. Section 6 stores that gauge and leaves the booked ounces alone.
 - A rise with nobody in frame is not a refill and not a bill. Section 6 updates the level only after the quiet-jump hold, and it does not book 70.
@@ -128,13 +129,29 @@ Three rounds of 4, 6, 8, 10, and 14 cups. Those five lines are each at or above 
 
 Difference is model percent minus the cup-line percent. The number at the top is the average of the absolute differences, in percent of full. There is no pass line.
 
+### Result, 10–11 October
+
+The 15 accuracy rows and 2 alarm rows are in `learn/accuracy.json` on the Pi. The page that night scored them with the cup conversion it had then: an average of 10.5% of full, worst 39.7%. `check/volume.py` was then rebuilt from those same rounds, so scoring them again with today's table (4.8%) is in-sample and flatters the model.
+
+The honest number scores each round with a cup table built from the other two rounds:
+
+| Cup line | Held-out error, rounds 1 / 2 / 3, % of full |
+|---|---|
+| 4 cups | +1.2 / +0.4 / −1.4 |
+| 6 cups | +0.7 / +0.5 / −1.3 |
+| 8 cups | −0.7 / −0.2 / +6.5 |
+| 10 cups | +2.4 / +0.8 / +12.1 |
+| 14 cups | −31.7 / −32.9 / −28.6 |
+
+From 4 to 10 cups the average is 2.4% of full (12 rows, worst 12.1%). The full tank is the weak point: in rounds 1 and 2 the model put the 14-cup water line at a box ratio of about 0.74, where round 3 put it at 0.995. With clear water at the very top, the surface is hard to see. The 11 October rehearsal hit the same thing once, a refill frame that read 52.5 of 70 fl oz. The ledger covers it: a refill books 70, and the highest settled reading after the refill becomes the full mark (section 6).
+
 ## 5. Person experiment
 
-The boxed preview is this experiment. Watch [http://192.168.1.248:8080](http://192.168.1.248:8080). The green box lags by about 5 seconds. Stand still that long.
+The live board's detection overlay is this experiment now. Watch [http://192.168.1.248:8080](http://192.168.1.248:8080). The green person box is drawn on each tick's frame, and a tick starts every 7.5 seconds, so stand still for about two ticks.
 
 Stay out of frame. Walk in and stand at the tank. Leave. Walk through once without stopping. Step in, pour, and leave.
 
-Write down when the green box appeared, when it went away, and whether the pour was inside a box. A visit starts when the person box is on and ends after two frames with no person box. One visit is one person-seen event. Orange boxes do not count. The live page does not use this two-frame visit. Section 6 writes the person-seen event when the appearance starts.
+Write down when the green box appeared, when it went away, and whether the pour was inside a box. A visit starts when the person box is on and ends after two frames with no person box. One visit is one person-seen event. Only the person class counts, and only the person class is drawn. The person model's other classes stay in the frame's JSON. The live page does not use this two-frame visit. Section 6 writes the person-seen event when the appearance starts.
 
 ## 6. Live page
 
@@ -142,14 +159,14 @@ One process owns the camera. `scripts/pi-receive` starts `check/board.py`.
 
 Each tick, in order:
 
-1. One upright 1280×720 JPEG. `hflip`, `vflip`. The focus and exposure lock stays as it was set. The loop does not change the shutter. The webcam sends 1280×720 MJPEG at 60 fps whatever `-framerate` asks for, so the board's `ffmpeg` puts `fps=2` ahead of the flip and only flips and encodes 2 frames a second. With that load gone the two models take about 3.9 s together, but a tick starts at most every 7.5 s. The brew rule counts a fall of more than 0.5 fl oz per tick, and a Classic brew falls about 5 fl oz a minute, so faster ticks would never read as Brewing. The pause also keeps the Pi under its 80 °C throttle. The reading's time is when that photo was taken, not when the models finished, and `capture_ms` is how old the photo was when the tick took it. Each reading also stores the board process's memory (`rss_mb`) and the CPU temperature (`temp_c`). The Pi 4 soft-throttles at 80 °C.
+1. One upright 1280×720 JPEG. `hflip`, `vflip`. The focus and exposure lock stays as it was set. The loop does not change the shutter. The webcam sends 1280×720 MJPEG at 60 fps whatever `-framerate` asks for, so the board's `ffmpeg` puts `fps=2` ahead of the flip and only flips and encodes 2 frames a second. With that load gone the two models take about 3.9 s together, but a tick starts at most every 7.5 s. Brewing starts on two ticks in a row that each fall more than 0.5 fl oz. In the 11 October rehearsal a full Classic brew fell about 3.6 fl oz a minute on average (about 3 early, about 4.6 mid-brew), about 0.4 fl oz a tick at 7.5 s. At 3.9 s a tick it would fall well under 0.5 a tick and seldom start Brewing. The pause also keeps the Pi near 62 °C, under its 80 °C soft throttle; running flat out it reached 79 °C. The reading's time is when that photo was taken, not when the models finished, and `capture_ms` is how old the photo was when the tick took it. Each reading also stores the board process's memory (`rss_mb`), the CPU temperature (`temp_c`), whole-Pi CPU use since the previous tick (`cpu_pct`), and free memory (`mem_free_pct`).
 2. Tank RF-DETR Nano on that full frame. Classes `Reservoir` and `liquid-level`. Read the names from `class_names.txt`. `predict()` renames the last class to `__background__`.
 3. Person RF-DETR Nano on the same frame. This is the COCO checkpoint. Use the person class only.
 4. Gauge. `check/volume.py`. No memory. No reservoir box means `gauge_oz` is null. No liquid line means 0. Percent is cups / 14 × 100. Fluid ounces are cups × 5.
 5. One SQLite transaction in `learn/tank.sqlite`. Insert a `reading`. Replace the `machine` row, including both ounce totals and the coffee figures. Insert an `event` when a person appearance starts, the reservoir comes back, the activity changes, or the alarm changes. A return that also changes the alarm writes both events. Tables are in `page/schema.sql`.
 6. Write the JPEG under `learn/frames/` and delete all but the newest 8. The database does not store the JPEG. Beside each JPEG, write a JSON file with the same name: every box both models returned on that frame, its class, confidence, and corners, whether the gauge or the person check used it, and the gauge reading. It is pruned with its JPEG. The JPEG itself stays clean, with no boxes drawn in.
 
-The page on port 8080 reads the `machine` row, the newest 50 `event` rows, the fill events of the last three days, the list of logged days, and those 8 files. It does not open the camera, it does not run a model, and it does not scan `reading`. It fetches itself every 3 seconds, so nobody reloads it during the demo. The header says how old the last reading is. Past 30 seconds it turns red and says Not updating. When the loop cannot tick, it writes one line to `learn/board-error.txt` and the page shows that line in red. A good tick clears it. The photo shows that frame's saved boxes on top: Reservoir in blue, the water line in amber with the reading and percent, and a person in green. The person model's other COCO classes stay in the JSON and are not drawn. A box the gauge did not use is dashed. The Detections button hides them, and the browser remembers that choice. Under the photo, a Raspberry Pi row shows CPU use and the tank and person model times averaged over the last 2 minutes, the newest CPU temperature and free memory, and how often a reading lands. The temperature turns amber at 75 °C and red at 80 °C. The board to match is `page/live.html`.
+The page on port 8080 reads the `machine` row, the newest 50 `event` rows, the newest 40 `reading` rows (for the Raspberry Pi row and the use rate), the list of logged days, and those 8 frames with their box files. It does not open the camera, it does not run a model, and it does not scan the whole `reading` table. It fetches itself every 3 seconds, so nobody reloads it during the demo. The header says how old the last reading is. Past 30 seconds it turns red and says Not updating. When the loop cannot tick, it writes one line to `learn/board-error.txt` and the page shows that line in red. A good tick clears it. The photo shows that frame's saved boxes on top: Reservoir in blue, the water line in amber with the reading and percent, and a person in green. The person model's other COCO classes stay in the JSON and are not drawn. A box the gauge did not use is dashed. The Detections button hides them, and the browser remembers that choice. Under the photo, a Raspberry Pi row shows CPU use and the tank and person model times averaged over the last 2 minutes, the newest CPU temperature and free memory, and how often a reading lands. The temperature turns amber at 75 °C and red at 80 °C. The board to match is `page/live.html`.
 
 The process keeps its running totals in memory and replays `reading` only when it starts, so a tick costs the same at the end of a day as at the start. A failed tick prints the traceback to `/tmp/preview.log` and the loop goes on with the next picture. If the models do not load, the page stays up and shows why.
 
@@ -173,15 +190,54 @@ On a seated tick with a liquid line and no person, move booked ounces by the gau
 | Used today | The same sum since local midnight. The ledger writes `out_today` on `machine`. On a brew that fits in 15 minutes the two numbers match. |
 | Coffee | $0.50 a cup. A fill bills `delta_oz`, which is 70 minus `taken_oz`, not the model delta. `filled_oz` is the sum of today's fill deltas. Coffee today is `filled_oz / 5 × 0.50`. The month is the mean of logged days × 30. A day with no rows is left out. A logged day with no refill is $0. The ledger writes `coffee_month` on `machine`. |
 
-Not in this build. An exposure probe, thumbnail files, a password, a reservoir crop, one combined model, a second Inference server, and a 24-hour rate. The use rate is the net fall in booked ounces over the last 2 minutes, per minute, read from `reading` by the page; it needs a minute of history, and a rise reads as 0. Empty in is booked ounces over that rate, shown as Not draining under 0.2 fl oz a minute. Each reading stores `tank_ms` and `person_ms`. The 4.4 second figure is one person pass. A slow tick waits, then the next grab starts.
+Not in this build. An exposure probe, thumbnail files, a password, a reservoir crop, one combined model, a second Inference server, and a 24-hour rate. The use rate is the net fall in booked ounces over the last 2 minutes, per minute, read from `reading` by the page; it needs a minute of history, and a rise reads as 0. Empty in is booked ounces over that rate, shown as Not draining under 0.2 fl oz a minute, and Empty once the tank is dry. Each reading stores `tank_ms` and `person_ms`, about 1.85 s each on 11 October. A slow tick waits, then the next grab starts.
 
 ## 7. Demo
 
-Monday 12 October, 1:00 PM ET. The page is already ticking before the call. Delete `learn/tank.sqlite` and `learn/frames/` before that restart if a rehearsal left rows. Do not wipe them after the call has started. WARM is off. 1-4 CUP is off. The carafe is seated and empty. Start near 40 fl oz. The camera sees the whole machine, so out means out of that frame.
+Monday 12 October, 1:00 PM ET. The page is already ticking before the call. Do not push a commit during the call: a restart costs about 66 seconds while the models load.
+
+Reset before the call, after any rehearsal, so the log starts clean. Events are written once and a restart does not rebuild them. From an SSH session on the Pi:
+
+```sh
+fuser -k 8080/tcp
+cd /home/bs/tank/learn && rm -f tank.sqlite tank.sqlite-wal tank.sqlite-shm board-error.txt && rm -rf frames
+cd /home/bs/tank && setsid nohup /home/bs/tank-envs/current/bin/python check/board.py >/tmp/preview.log 2>&1 </dev/null &
+```
+
+Keep `learn/accuracy.json`. Wait about 70 seconds, then open the page and check that the header says Updated a few seconds ago and Live in green. Do not wipe after the call has started.
+
+WARM is off. 1-4 CUP is off. The carafe is seated and empty. Start near 40 fl oz. The camera sees the whole machine, so out means out of that frame.
 
 Stop the cycle and wait until the machine is off before the reservoir comes out.
 
-1. Open the page. The band is 3/4. The refill alarm is off. Activity is Idle. The log has no fill. Used, last 15 min and Used today are both 0.0 fl oz.
-2. Step in where the reservoir stays visible, then step out. One log line says a person was seen. People seen today becomes 1 on that line. The level is not a fill or a dump.
-3. Leave the reservoir seated and start a Classic brew. The opening pause is Idle, and both Used tiles can stay 0. That is not the alarm. After two brew samples, activity is Brewing and Used today shows the drop. Under 17.5 fl oz the band is Low and the alarm comes on. Do not walk through the frame during the brew.
-4. Stop the cycle. Take the reservoir, fill it to the 14-cup line, put it back, and leave the frame. Wait for the return tick. That tick books 70 when the model rose at least 3.5 fl oz from the saved ounces. The bill is 70 minus those saved ounces. The log keeps the model reading next to 70, and the level panel shows it as Camera reads. Both Used tiles stay at the ounces the brew dropped. Refilled today and Refill bill today show the fill. The monthly estimate is 30 times today's dollars, because it has 1 day of data.
+1. Open the page. The band is 3/4. The refill alarm is off. Activity is Idle. The log has no fill. Used, last 15 min and Used today are both 0.0 fl oz. Use rate reads 0.0 and Empty in says Not draining. The photo shows the Reservoir box in blue and the water line in amber with its reading. The Raspberry Pi row under the photo shows the model times, about 1.9 s each.
+2. Step in where the reservoir stays visible, then step out. A green person box appears on the photo. One log line says a person was seen. People seen today becomes 1 on that line. The level is not a fill or a dump.
+3. Leave the reservoir seated and start a Classic brew from the side, without blocking the camera's view of the reservoir. The opening pause is Idle, and both Used tiles can stay 0. That is not the alarm. Brewing shows about 40 seconds after the level starts falling, and stays on through the brew. Used today climbs, Use rate shows about 3 to 5 fl oz a minute, and Empty in counts down. From 40 fl oz at about 3.6 fl oz a minute, the band goes Low and the alarm comes on about 6 minutes in, and the tank runs dry about 11 minutes in. Do not walk through the frame during the brew.
+4. Stop the cycle. Take the reservoir out of the frame, fill it to the 14-cup line, put it back, and leave the frame. Carrying it straight out is a take: a person seen in the two ticks before it disappeared counts. Wait for the return tick, the first one with the reservoir seated and nobody in view. That tick books 70 when the model rose at least 3.5 fl oz from the saved ounces. The bill is 70 minus those saved ounces. The log keeps the model reading next to 70, and the level panel shows it as Camera reads. That first reading can be low on a full, clear tank. The next settled reading becomes the full mark. Both Used tiles stay at the ounces the brew dropped. Refilled today and Refill bill today show the fill. The monthly estimate is 30 times today's dollars, because it has 1 day of data.
+
+Waiting before pressing Brew after a refill is fine. A full tank sitting still stays at 70 and Idle, and the brew plays out the same whenever it starts.
+
+## 8. Rehearsal, 11 October 2026
+
+A full refill and a Classic brew from empty, 23:12 to 23:34, with the camera at night under room lights. Every frame and its box file from that run are in `/home/bs/rehearsal-2026-10-11/` on the Pi.
+
+| Time | What the board recorded |
+|---|---|
+| 23:12:20 | Person seen at the machine |
+| 23:12:35 | Reservoir taken, saved 0 fl oz. The person carried it straight out of the frame. |
+| 23:13:43 | Refill booked at 70 fl oz, bill $7.00. That frame read 52.5; the next read 70.0. |
+| 23:14:28 | Level starts falling after the warm-up, and booked ounces follow the camera |
+| 23:15:05 | Brewing, 37 seconds after the fall began, on through the brew |
+| 23:29:13 | Refill alarm on at 17.4 fl oz, still brewing |
+| 23:33:51 | Tank dry. 0 fl oz, Idle. Used today 70.0 fl oz, exactly what went in. |
+
+The brew took about 19½ minutes from full to empty, about 3.6 fl oz a minute, slower than the 12 to 15 minutes `hardware.md` gives for a full carafe.
+
+What the rehearsal changed:
+
+- The take rule now counts a person seen just before the reservoir vanished. Carrying it straight to the sink was not a take before.
+- The full mark after a refill is the highest settled reading, not the return tick's reading. The low 52.5 had held the level at 70 for five minutes.
+- Brewing ends after 60 seconds with no fall, not on the first tick that does not fall. The old rule wrote ten Brewing and Idle lines in five and a half minutes.
+- The noise floor for Used is 2 fl oz. Single-tick upticks of up to 1.4 fl oz were counting the same ounces twice, 49.4 fl oz used out of 45.6.
+
+Edge device during the brew: two RF-DETR Nano passes of about 1.9 seconds each on the Pi 4's CPU, a reading every 7.5 seconds, CPU use about 50%, CPU at 61 to 63 °C, and about 68% of memory free. Before `ffmpeg` was thinned to 2 frames a second it used 166% CPU by itself, each model pass took about 3.7 seconds, and the CPU sat at 79 °C.
