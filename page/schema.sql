@@ -9,8 +9,8 @@ PRAGMA foreign_keys = ON;
 
 -- gauge_oz is null when the reservoir box is missing.
 -- gauge_oz is 0 when the reservoir is present and no liquid line is found.
--- booked_oz is what we kept. On a fill it is 70 even when gauge_oz is lower.
--- Later seated ticks move booked_oz by the gauge change. A still gauge leaves 70 in place.
+-- booked_oz is what we kept, from 0 to 70. On a fill it is 70 even when gauge_oz is lower.
+-- Later seated ticks scale gauge_oz onto 0..70 from the fill's gauge. A still gauge leaves 70 in place.
 CREATE TABLE reading (
   id INTEGER PRIMARY KEY,
   ts TEXT NOT NULL,

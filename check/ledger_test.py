@@ -7,7 +7,7 @@
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -393,7 +393,7 @@ class LedgerTests(unittest.TestCase):
             ),
         )
 
-    def test_return_books_70_and_restart_keeps_the_baseline(self):
+    def test_return_books_70_and_restart_keeps_the_fill_scale(self):
         folder, path, db = self.db()
         self.row(db, "12:00", 20, False, booked=200, m15=0, today=0, alarm=False, activity="idle")
         self.row(db, "12:01", 18, False, booked=180, m15=20, today=20, alarm=False, activity="idle")
@@ -468,21 +468,22 @@ class LedgerTests(unittest.TestCase):
         )
         self.foreign(folder)
         db = self.reconnect(path)
+        # 45.3 of the 47.3 the fill read is 67.0 of 70.
         self.row(
             db,
             "12:06",
             45.3,
             False,
-            booked=680,
-            m15=60,
-            today=60,
+            booked=670,
+            m15=70,
+            today=70,
             alarm=False,
             activity="idle",
             filled=540,
             month=16200,
         )
 
-    def test_accepted_jump_after_a_fill_adds_the_gauge_change(self):
+    def test_accepted_jump_after_a_fill_stays_at_70(self):
         _folder, _path, db = self.db()
         self.row(db, "12:00", 20, False, booked=200, m15=0, today=0, alarm=False, activity="idle")
         self.row(db, "12:01", 18, False, booked=180, m15=20, today=20, alarm=False, activity="idle")
@@ -582,7 +583,7 @@ class LedgerTests(unittest.TestCase):
             "12:08",
             59.6,
             False,
-            booked=827,
+            booked=700,
             m15=40,
             today=40,
             alarm=False,
@@ -1374,6 +1375,96 @@ class LedgerTests(unittest.TestCase):
             pending=460,
             pcount=1,
         )
+
+    def ticks(self, db, start, gauges, person=False, day="2026-10-12"):
+        when = at(start, day)
+        applied = None
+        for gauge in gauges:
+            applied = ledger.tick(db, ledger.Tick(when, gauge, person, 0, 0, 0, 0, None, None))
+            when += timedelta(seconds=10)
+        return applied.machine
+
+    def test_a_wobbling_still_tank_is_not_ounces_out(self):
+        _folder, _path, db = self.db()
+        wobble = (40.0, 39.7, 40.3, 39.8, 40.2, 39.7, 40.1, 39.9, 40.3, 39.7) * 9
+        machine = self.ticks(db, "12:00", wobble)
+        self.assertEqual(tenths(machine.out_15m), 3)
+        self.assertEqual(tenths(machine.out_today), 3)
+        self.assertEqual(machine.activity, "idle")
+
+    def test_a_drop_after_a_wobble_counts_once(self):
+        _folder, _path, db = self.db()
+        machine = self.ticks(db, "12:00", (40.0, 39.7, 40.3, 39.7, 38.0, 38.4, 38.0))
+        self.assertEqual(tenths(machine.booked_oz), 380)
+        self.assertEqual(tenths(machine.out_today), 20)
+
+    def take_at_16(self, db):
+        self.ticks(db, "11:59", (16.0, 16.0))
+        machine = self.ticks(db, "12:00", (None, None), person=True)
+        self.assertEqual(machine.activity, "out")
+
+    def test_a_fill_the_model_reads_low_still_empties_to_zero(self):
+        _folder, _path, db = self.db()
+        self.take_at_16(db)
+        machine = self.ticks(db, "12:01", (60.0,))
+        self.assertEqual(tenths(machine.booked_oz), 700)
+        machine = self.ticks(db, "12:02", [float(gauge) for gauge in range(58, 29, -2)])
+        self.assertEqual(tenths(machine.booked_oz), 350)
+        machine = self.ticks(db, "12:05", [float(gauge) for gauge in range(28, 5, -2)])
+        self.assertEqual(tenths(machine.booked_oz), 70)
+        self.assertTrue(machine.alarm)
+        self.assertEqual(machine.activity, "brewing")
+        machine = self.ticks(db, "12:08", (0, 0))
+        self.assertEqual(tenths(machine.booked_oz), 0)
+        self.assertEqual(machine.activity, "idle")
+        self.assertEqual(tenths(machine.out_today), 700)
+
+    def test_booked_never_passes_70(self):
+        _folder, _path, db = self.db()
+        self.take_at_16(db)
+        machine = self.ticks(db, "12:01", (50.0, 51.0, 52.0))
+        self.assertEqual(tenths(machine.booked_oz), 700)
+
+    def test_a_brew_that_loses_the_line_ends_idle_at_zero(self):
+        _folder, _path, db = self.db()
+        machine = self.ticks(db, "12:00", (20.0, 18.0, 16.0, 14.0, 12.0, 10.0, 8.0))
+        self.assertEqual(machine.activity, "brewing")
+        machine = self.ticks(db, "12:02", (0,))
+        self.assertEqual(tenths(machine.booked_oz), 80)
+        self.assertEqual(machine.activity, "brewing")
+        machine = self.ticks(db, "12:03", (0,))
+        self.assertEqual(tenths(machine.booked_oz), 0)
+        self.assertEqual(machine.activity, "idle")
+        self.assertEqual(tenths(machine.out_today), 200)
+        kinds = [row["kind"] for row in db.execute("SELECT kind FROM event ORDER BY id")]
+        self.assertEqual(kinds[-1], "idle")
+
+    def test_one_zero_mid_brew_is_a_missed_line(self):
+        _folder, _path, db = self.db()
+        self.ticks(db, "12:00", (40.0, 38.0, 36.0))
+        machine = self.ticks(db, "12:01", (0, 34.0, 32.0))
+        self.assertEqual(tenths(machine.booked_oz), 320)
+        self.assertEqual(machine.activity, "brewing")
+
+    def test_the_kept_fold_matches_a_full_replay(self):
+        _folder, path, db = self.db()
+        self.ticks(db, "11:50", (40.0, 39.7, 40.3, 38.0, 36.0, 34.0, None, None), day="2026-10-11")
+        self.ticks(db, "11:59", (None, None), person=True, day="2026-10-11")
+        self.ticks(db, "12:00", (60.0, 59.6, 50.0, 48.0, 0, 0, 3.0))
+        self.assertEqual(db.folded[1], ledger._replay(db))
+        other = self.reconnect(path)
+        self.assertIsNone(other.folded)
+        self.ticks(other, "12:10", (3.0,))
+        self.assertEqual(other.folded[1], ledger._replay(other))
+
+    def test_a_tick_from_another_connection_forces_a_replay(self):
+        _folder, path, db = self.db()
+        self.ticks(db, "12:00", (40.0, 38.0))
+        other = self.reconnect(path)
+        self.ticks(other, "12:01", (36.0,))
+        machine = self.ticks(db, "12:02", (34.0,))
+        self.assertEqual(tenths(machine.out_today), 60)
+        self.assertEqual(db.folded[1], ledger._replay(db))
 
 
 if __name__ == "__main__":

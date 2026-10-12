@@ -1,7 +1,7 @@
 import math
 import sqlite3
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, time as clock_time, timedelta
 from pathlib import Path
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
@@ -31,6 +31,9 @@ _BREW_HI = 50
 # Under one cup. An empty tank flickers between no line and about 3 fl oz.
 # A seated 0 locks that booking at 0. The flicker does not raise it.
 _CUP = 50
+# Model wobble on a still tank. A rise this small does not lift the outflow floor,
+# so the same ounces are not counted out twice.
+_NOISE = 10
 _WINDOW = timedelta(minutes=15)
 
 
@@ -78,7 +81,11 @@ class Applied(NamedTuple):
 
 
 class _Fold(NamedTuple):
-    baseline: int | None
+    # The gauge a fill booked as 70. Later gauges scale onto 0..70 from it. None is 1:1.
+    anchor: int | None
+    # Lowest booked level since the last real rise. Only a drop below it counts as out.
+    floor: int | None
+    empty_run: int
     prev_gauge: int | None
     booked: int | None
     activity: str
@@ -109,8 +116,13 @@ class _Fold(NamedTuple):
     seated_today: int
 
 
+class _Connection(sqlite3.Connection):
+    # (newest reading id, fold after it). A tick replays only when another writer moved the table.
+    folded: "tuple[int, _Fold] | None" = None
+
+
 def connect(path: str | Path) -> sqlite3.Connection:
-    db = sqlite3.connect(path)
+    db = sqlite3.connect(path, factory=_Connection)
     db.row_factory = sqlite3.Row
     db.isolation_level = None
     db.execute("PRAGMA foreign_keys = ON")
@@ -128,16 +140,27 @@ def tick(db: sqlite3.Connection, one: Tick) -> Applied:
     db.execute("BEGIN IMMEDIATE")
     try:
         started = time.perf_counter()
-        fold = _replay(db)
+        fold = _current(db)
         gauge = None if one.gauge_oz is None else round(one.gauge_oz * 10)
         fold, events = _step(fold, one.at, gauge, one.person)
         ledger_ms = round((time.perf_counter() - started) * 1000)
-        _write(db, one, fold, events, ledger_ms, gauge)
+        reading_id = _write(db, one, fold, events, ledger_ms, gauge)
         db.execute("COMMIT")
     except BaseException:
         db.execute("ROLLBACK")
         raise
+    if isinstance(db, _Connection):
+        db.folded = (reading_id, fold)
     return Applied(_machine(fold, one.person), events)
+
+
+def _current(db: sqlite3.Connection) -> "_Fold":
+    folded = getattr(db, "folded", None)
+    if folded is not None:
+        newest = db.execute("SELECT max(id) FROM reading").fetchone()[0]
+        if newest == folded[0]:
+            return folded[1]
+    return _replay(db)
 
 
 def _reject(one: Tick) -> None:
@@ -154,6 +177,8 @@ def _reject(one: Tick) -> None:
 def _empty() -> _Fold:
     return _Fold(
         None,
+        None,
+        0,
         None,
         None,
         "idle",
@@ -189,6 +214,14 @@ def _under_cup(gauge: int | None) -> bool:
     return gauge is not None and gauge < _CUP
 
 
+def _scaled(gauge: int, anchor: int | None) -> int:
+    if anchor is None:
+        level = gauge
+    else:
+        level = round(gauge * _FULL / anchor)
+    return max(0, min(_FULL, level))
+
+
 def _replay(db: sqlite3.Connection) -> _Fold:
     fold = _empty()
     rows = db.execute("SELECT ts, gauge_oz, person FROM reading ORDER BY id")
@@ -206,7 +239,9 @@ def _replay(db: sqlite3.Connection) -> _Fold:
 def _step(
     fold: _Fold, at: datetime, gauge: int | None, person: bool
 ) -> tuple[_Fold, tuple[Event, ...]]:
-    baseline = fold.baseline
+    anchor = fold.anchor
+    floor = fold.floor
+    empty_run = fold.empty_run
     prev_gauge = fold.prev_gauge
     booked = fold.booked
     activity = fold.activity
@@ -224,7 +259,9 @@ def _step(
     pending_count = fold.pending_count
     brew_falls = fold.brew_falls
     brew_from = fold.brew_from
-    steps = list(fold.steps)
+    midnight = datetime.combine(at.astimezone(_CHICAGO).date(), clock_time(), _CHICAGO)
+    keep_from = min(at - _WINDOW, midnight)
+    steps = [step for step in fold.steps if step[0] >= keep_from]
     fills = list(fold.fills)
     logged_days = list(fold.logged_days)
     seated_15m = fold.seated_15m
@@ -249,26 +286,25 @@ def _step(
     def today_cents() -> int:
         return sum(delta for filled_day, delta in fills if filled_day == day)
 
-    def book_change(new_baseline: int) -> int:
-        nonlocal booked, baseline
-        if booked is None or baseline is None:
-            booked = new_baseline
-            baseline = new_baseline
-            return 0
+    def move(level: int) -> int:
+        """Book a level. Return how far it fell this tick."""
+        nonlocal booked, floor
         old = booked
-        booked = old + (new_baseline - baseline)
-        baseline = new_baseline
-        if booked < old:
-            steps.append((at, old - booked))
-        return old - booked
+        booked = level
+        if floor is None or level - floor > _NOISE:
+            floor = level
+        elif level < floor:
+            steps.append((at, floor - level))
+            floor = level
+        return 0 if old is None else old - level
+
+    def book(new_gauge: int) -> int:
+        return move(_scaled(new_gauge, anchor))
 
     def place(level: int) -> None:
-        nonlocal booked, baseline
-        old = booked
-        if old is not None and level < old:
-            steps.append((at, old - level))
-        booked = level
-        baseline = level
+        nonlocal anchor
+        anchor = None
+        move(level)
 
     def idle_line() -> None:
         events.append(
@@ -279,6 +315,9 @@ def _step(
                 booked,
             )
         )
+
+    seated_empty = gauge == 0 and not person and not reservoir_out
+    empty_run = empty_run + 1 if seated_empty else 0
 
     held = False
     if (
@@ -291,10 +330,7 @@ def _step(
     ):
         pending_count += 1
         if pending_count >= 3:
-            candidate = pending
-            # Booked ounces and the baseline diverge after a fill. Add the candidate's
-            # gauge change. Writing the candidate itself would replace 70 with the model.
-            book_change(candidate)
+            book(pending)
             pending = None
             pending_count = 0
             if activity == "brewing":
@@ -347,20 +383,30 @@ def _step(
             )
     elif gauge is None or (reservoir_out and (person or _under_cup(gauge))) or person or gauge == 0:
         # A seated 0 leaves a real level alone. It clears a booking still under one cup.
-        if gauge == 0 and not person and not reservoir_out and (booked is None or booked < _CUP):
-            booked = 0
-            baseline = 0
+        # During a brew, two seated 0s in a row are the tank running out below the last
+        # line the model can see.
+        if seated_empty and (
+            booked is None or booked < _CUP or (activity == "brewing" and empty_run >= 2)
+        ):
+            if activity == "brewing":
+                place(0)
+                become("idle")
+                idle_line()
+            else:
+                # Clearing an idle flicker is not ounces out.
+                anchor = None
+                booked = 0
+                floor = 0
             prev_gauge = None
+            brew_falls = 0
+            brew_from = None
     elif booked == 0 and _under_cup(gauge):
         pass
     elif reservoir_out:
         reservoir_out = False
         if gauge - taken >= _SHIFT:
-            old = booked
-            booked = _FULL
-            if old is not None and booked < old:
-                steps.append((at, old - booked))
-            baseline = gauge
+            anchor = gauge
+            move(_FULL)
             delta = _FULL - taken
             fills.append((day, delta))
             events.append(
@@ -383,17 +429,16 @@ def _step(
             events.append(_event("put_back", f"Put back. Level {_oz(booked)} fl oz.", gauge, booked))
         become("idle")
     else:
-        # Quiet-jump size uses the previous liquid line, not the booking baseline.
+        # Quiet-jump size uses the previous liquid line, not the booked level.
         # A person tick moves only that line.
         if prev_gauge is not None and abs(gauge - prev_gauge) > _OVER:
             pending = gauge
             pending_count = 1
-        elif baseline is None or booked is None:
-            booked = gauge
-            baseline = gauge
+        elif booked is None:
+            book(gauge)
         else:
             old = booked
-            drop = book_change(gauge)
+            drop = book(gauge)
             if _BREW_LO < drop <= _BREW_HI:
                 if brew_falls == 0:
                     brew_from = old
@@ -453,7 +498,9 @@ def _step(
     events.sort(key=lambda event: _KINDS.index(event.kind))
     return (
         _Fold(
-            baseline,
+            anchor,
+            floor,
+            empty_run,
             prev_gauge,
             booked,
             activity,
@@ -505,10 +552,10 @@ def _write(
     events: tuple[Event, ...],
     ledger_ms: int,
     gauge: int | None,
-) -> None:
+) -> int:
     ts = one.at.isoformat()
     total_ms = one.capture_ms + one.tank_ms + one.person_ms + one.gauge_ms + ledger_ms
-    db.execute(
+    inserted = db.execute(
         """
         INSERT INTO reading (
             ts, day, gauge_oz, booked_oz, person,
@@ -581,6 +628,7 @@ def _write(
                 event.delta_oz,
             ),
         )
+    return int(inserted.lastrowid)
 
 
 def _machine(fold: _Fold, person: bool) -> Machine:
