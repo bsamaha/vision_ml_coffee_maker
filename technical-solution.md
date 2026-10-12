@@ -195,6 +195,16 @@ How it is built:
 - Per-step times come from the Workflows profiler, so the Raspberry Pi row still shows the tank and person models separately.
 - The Workflow is the board's only detector. The earlier in-process `rfdetr` path was removed on 12 October after the parity check below.
 
+The refill email, in the Roboflow app only:
+
+`workflow/tank-gauge-alert.json` is the same Workflow with three more steps, for demonstrating an alert in the Roboflow editor. Each email costs Roboflow credits, so the Pi runs `workflow/tank-gauge.json` and never sends one.
+
+1. Continue If, `roboflow_core/continue_if@v1`: goes on only when `gauge_oz` is under 17.5 fl oz, the board's alarm line. A frame with no reservoir has a null gauge and does not go on.
+2. Bounding Box Visualization: the tank model's boxes drawn on the frame.
+3. Email Notification, `roboflow_core/email_notification@v2`, Roboflow-managed: subject "Refill due: coffee tank", the level to one decimal and whether a person is in view, with the annotated photo attached as `tank.jpg`. The recipient is the `alert_email` input, typed in the editor's test panel, so no address is stored in the definition.
+
+`python check/workflow.py --export-alert workflow/tank-gauge-alert.json` writes it from the same code, so its TankGauge block matches the Pi's. Run locally on 12 October with the email disabled, the branch reached the email on the empty frame (0.0 fl oz) and the partly visible one (13.4), and skipped it on the full frame (70.0) and on a frame with no reservoir. To demo it, upload `.shots/rehearsal/00000303.jpg` (an empty tank, nobody in view) in the editor's test panel. One upload sends one email. A full frame, `00000316.jpg`, sends nothing.
+
 What it measured, 12 October:
 
 | | In-process `rfdetr` (PyTorch) | Workflow (ONNX) |

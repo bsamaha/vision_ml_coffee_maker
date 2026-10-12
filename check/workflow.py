@@ -5,6 +5,7 @@ Steps: the fine-tuned tank model, the COCO RF-DETR Nano kept to `person`, and th
 custom block, which turns the two sets of boxes into fluid ounces and a person flag.
 
     python check/workflow.py --export workflow/tank-gauge.json
+    python check/workflow.py --export-alert workflow/tank-gauge-alert.json
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ import tank_gauge
 
 TANK_MODEL = "rate-and-volume-of-coffee/1"
 PERSON_MODEL = "rfdetr-nano"
+# The board's refill alarm line. The alert Workflow emails under it.
+ALARM_OZ = 17.5
 _DETECTOR = "roboflow_core/roboflow_object_detection_model@v2"
 # Read by `inference` when it is first imported, so `Runner` sets them before that import.
 _ENVIRONMENT = {
@@ -88,6 +91,60 @@ def definition(tank_model: str = TANK_MODEL) -> dict:
             {"type": "JsonField", "name": "person", "selector": "$steps.gauge.person"},
         ],
     }
+
+
+def alert_definition(tank_model: str = TANK_MODEL) -> dict:
+    """The same Workflow plus a refill email, for the Roboflow app only.
+
+    Each email costs Roboflow credits, so the Pi runs `definition()` and never sends one.
+    The recipient is the `alert_email` input, so no address is stored in the definition.
+    """
+    spec = definition(tank_model)
+    spec["inputs"].append({"type": "WorkflowParameter", "name": "alert_email"})
+    spec["steps"] += [
+        {
+            "type": "roboflow_core/continue_if@v1",
+            "name": "low",
+            "condition_statement": {
+                "type": "StatementGroup",
+                "statements": [
+                    {
+                        "type": "BinaryStatement",
+                        "left_operand": {"type": "DynamicOperand", "operand_name": "level"},
+                        "comparator": {"type": "(Number) <"},
+                        "right_operand": {"type": "StaticOperand", "value": ALARM_OZ},
+                    }
+                ],
+            },
+            "evaluation_parameters": {"level": "$steps.gauge.gauge_oz"},
+            "next_steps": ["$steps.photo"],
+        },
+        {
+            "type": "roboflow_core/bounding_box_visualization@v1",
+            "name": "photo",
+            "image": "$inputs.image",
+            "predictions": "$steps.tank.predictions",
+        },
+        {
+            "type": "roboflow_core/email_notification@v2",
+            "name": "refill_email",
+            "email_provider": "Roboflow Managed API Key",
+            "subject": "Refill due: coffee tank",
+            "receiver_email": "$inputs.alert_email",
+            "message": (
+                "The tank reads {{ $parameters.level }} fl oz, under the "
+                f"{ALARM_OZ} fl oz refill line. Person in view: {{{{ $parameters.person }}}}. "
+                "The photo with the model's boxes is attached."
+            ),
+            "message_parameters": {"level": "$steps.gauge.gauge_oz", "person": "$steps.gauge.person"},
+            "message_parameters_operations": {"level": [{"type": "NumberRound", "decimal_digits": 1}]},
+            "attachments": {"tank.jpg": "$steps.photo.image"},
+            "fire_and_forget": False,
+            "cooldown_seconds": 0,
+        },
+    ]
+    spec["outputs"].append({"type": "JsonField", "name": "email", "selector": "$steps.refill_email.*"})
+    return spec
 
 
 def api_key(env_file: Path = Path.home() / "tank-envs" / "roboflow.env") -> str | None:
@@ -184,11 +241,12 @@ class Runner:
 
 
 def main(argv: list[str]) -> None:
-    if len(argv) == 3 and argv[1] == "--export":
+    builders = {"--export": definition, "--export-alert": alert_definition}
+    if len(argv) == 3 and argv[1] in builders:
         Path(argv[2]).parent.mkdir(parents=True, exist_ok=True)
-        Path(argv[2]).write_text(json.dumps(definition(), indent=2) + "\n", encoding="utf-8")
+        Path(argv[2]).write_text(json.dumps(builders[argv[1]](), indent=2) + "\n", encoding="utf-8")
         return
-    raise SystemExit("usage: python check/workflow.py --export <path>")
+    raise SystemExit("usage: python check/workflow.py --export|--export-alert <path>")
 
 
 if __name__ == "__main__":

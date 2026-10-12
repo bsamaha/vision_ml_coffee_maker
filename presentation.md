@@ -84,7 +84,9 @@ What to say:
 - **One definition, two places.** The same JSON is saved in the Roboflow app and runs on the Pi. It is generated from the code, and a test fails if the two drift.
 - **Proved against the earlier pipeline.** On 348 saved rehearsal frames, the Workflow matched the earlier in-process models within 1 fl oz on 329 of 336 readings and on every person flag. On the two frames where they differed by more, the Workflow was right.
 
-Show: the Workflow in the Roboflow editor, the TankGauge block's code, and a test run on a saved frame.
+- **The alert, live in the editor.** The alert version adds Continue If (under 17.5 fl oz), a box visualization, and an Email Notification block with the annotated photo attached. Drop in an empty-tank frame and the email arrives. Drop in a full one and nothing is sent. The Pi runs the version without email, because each email costs credits and the board already shows the alarm.
+
+Show: the Workflow in the Roboflow editor, the TankGauge block's code, then the alert version. Upload `.shots/rehearsal/00000303.jpg` (empty, nobody in view) and show the email arriving with its photo. Then upload `00000316.jpg` (full) and show that nothing is sent. Use one upload each: every email spends credits.
 
 ## 5. Deployment with Roboflow Inference, and the insights
 
@@ -105,7 +107,7 @@ The insights, and what each one becomes on a pad:
 | Every visit and refill in the event log, with a photo | A visit record for every pumper and vendor |
 | Refill bill: 70 fl oz minus what was left | Every delivery ticket checked against a fill event |
 
-The board is the operator screen (an HMI). Sending these events out, as an alert to a phone or onto the operator's SCADA or historian over MQTT, is the next step and is not built here.
+The board is the operator screen (an HMI). The refill email is the alert, shown from the Roboflow app's version of the Workflow. Sending every event out from the Pi, and onto the operator's SCADA or historian over MQTT, is the next step.
 
 ## 6. Results
 
@@ -126,7 +128,7 @@ Limits to say out loud:
 
 Next steps:
 
-1. Outbound alerts and the operator hand-off: a webhook to phones, and MQTT to SCADA or a historian.
+1. Alerts from the edge and the operator hand-off: the refill email sent from the Pi on the board's own alarm and fill events, and MQTT to SCADA or a historian.
 2. Field data: pictures from a real pad, with brightness, exposure, blur, and noise augmentations, and spills as a new class.
 3. A strapping table per tank, calibrated at the top of the tank on site.
 4. Duty cycling for off-grid sites, and Roboflow's deployment manager for a fleet.
@@ -148,6 +150,7 @@ Next steps:
 
 - Reset the board, as in section 7 of [technical-solution.md](technical-solution.md), and wait for "Roboflow Workflow on local Inference" in green.
 - Machine ready: about 40 fl oz in the reservoir, carafe seated and empty, WARM and 1-4 CUP off.
-- Tabs open: the board, the Roboflow project's dataset and a labeled image, the trained model's version page, and the Workflow in the editor.
+- Tabs open: the board, the Roboflow project's dataset and a labeled image, the trained model's version page, the Workflow in the editor, the alert Workflow with `alert_email` filled in, and your inbox.
+- Files ready to upload: `.shots/rehearsal/00000303.jpg` (empty) and `00000316.jpg` (full).
 - A backup in case the live board fails: screenshots of the board mid-brew and after a refill, and the rehearsal's refill frames.
 - Don't push code during the call. A restart takes about a minute.

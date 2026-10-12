@@ -1,0 +1,162 @@
+{
+  "version": "1.0",
+  "inputs": [
+    {
+      "type": "WorkflowImage",
+      "name": "image"
+    },
+    {
+      "type": "WorkflowParameter",
+      "name": "alert_email"
+    }
+  ],
+  "dynamic_blocks_definitions": [
+    {
+      "type": "DynamicBlockDefinition",
+      "manifest": {
+        "type": "ManifestDescription",
+        "block_type": "TankGauge",
+        "inputs": {
+          "tank": {
+            "type": "DynamicInputDefinition",
+            "selector_types": [
+              "step_output"
+            ]
+          },
+          "people": {
+            "type": "DynamicInputDefinition",
+            "selector_types": [
+              "step_output"
+            ]
+          }
+        },
+        "outputs": {
+          "gauge_oz": {
+            "type": "DynamicOutputDefinition",
+            "kind": []
+          },
+          "person": {
+            "type": "DynamicOutputDefinition",
+            "kind": []
+          }
+        }
+      },
+      "code": {
+        "type": "PythonCode",
+        "run_function_code": "\nLINES = ((0.0, 0), (0.22273079838880622, 2), (0.3831708317431226, 4), (0.5264066757481384, 6), (0.6760998404779525, 8), (0.7640879285619365, 10), (0.9951559305027505, 14))\nOZ_PER_CUP = 5\nTHRESHOLD = 0.4\n\n\ndef _best(detections, name):\n    names = detections.data.get(\"class_name\", [])\n    best = None\n    for index in range(len(detections)):\n        if names[index] != name or detections.confidence[index] < THRESHOLD:\n            continue\n        if best is None or detections.confidence[index] > detections.confidence[best]:\n            best = index\n    return best\n\n\ndef _cups(ratio):\n    if ratio <= LINES[0][0]:\n        return float(LINES[0][1])\n    if ratio >= LINES[-1][0]:\n        return float(LINES[-1][1])\n    for (low_ratio, low_cups), (high_ratio, high_cups) in zip(LINES, LINES[1:]):\n        if low_ratio <= ratio <= high_ratio:\n            return low_cups + (ratio - low_ratio) / (high_ratio - low_ratio) * (high_cups - low_cups)\n    return float(LINES[-1][1])\n\n\ndef run(self, tank, people):\n    reservoir = _best(tank, \"Reservoir\")\n    liquid = _best(tank, \"liquid-level\")\n    gauge_oz = None\n    if reservoir is not None:\n        top, bottom = float(tank.xyxy[reservoir][1]), float(tank.xyxy[reservoir][3])\n        if bottom > top:\n            if liquid is None:\n                gauge_oz = 0.0\n            else:\n                ratio = (bottom - float(tank.xyxy[liquid][1])) / (bottom - top)\n                gauge_oz = _cups(ratio) * OZ_PER_CUP\n    return {\"gauge_oz\": gauge_oz, \"person\": _best(people, \"person\") is not None}\n"
+      }
+    }
+  ],
+  "steps": [
+    {
+      "type": "roboflow_core/roboflow_object_detection_model@v2",
+      "name": "tank",
+      "image": "$inputs.image",
+      "model_id": "rate-and-volume-of-coffee/1",
+      "confidence": 0.4
+    },
+    {
+      "type": "roboflow_core/roboflow_object_detection_model@v2",
+      "name": "people",
+      "image": "$inputs.image",
+      "model_id": "rfdetr-nano",
+      "confidence": 0.4,
+      "class_filter": [
+        "person"
+      ]
+    },
+    {
+      "type": "TankGauge",
+      "name": "gauge",
+      "tank": "$steps.tank.predictions",
+      "people": "$steps.people.predictions"
+    },
+    {
+      "type": "roboflow_core/continue_if@v1",
+      "name": "low",
+      "condition_statement": {
+        "type": "StatementGroup",
+        "statements": [
+          {
+            "type": "BinaryStatement",
+            "left_operand": {
+              "type": "DynamicOperand",
+              "operand_name": "level"
+            },
+            "comparator": {
+              "type": "(Number) <"
+            },
+            "right_operand": {
+              "type": "StaticOperand",
+              "value": 17.5
+            }
+          }
+        ]
+      },
+      "evaluation_parameters": {
+        "level": "$steps.gauge.gauge_oz"
+      },
+      "next_steps": [
+        "$steps.photo"
+      ]
+    },
+    {
+      "type": "roboflow_core/bounding_box_visualization@v1",
+      "name": "photo",
+      "image": "$inputs.image",
+      "predictions": "$steps.tank.predictions"
+    },
+    {
+      "type": "roboflow_core/email_notification@v2",
+      "name": "refill_email",
+      "email_provider": "Roboflow Managed API Key",
+      "subject": "Refill due: coffee tank",
+      "receiver_email": "$inputs.alert_email",
+      "message": "The tank reads {{ $parameters.level }} fl oz, under the 17.5 fl oz refill line. Person in view: {{ $parameters.person }}. The photo with the model's boxes is attached.",
+      "message_parameters": {
+        "level": "$steps.gauge.gauge_oz",
+        "person": "$steps.gauge.person"
+      },
+      "message_parameters_operations": {
+        "level": [
+          {
+            "type": "NumberRound",
+            "decimal_digits": 1
+          }
+        ]
+      },
+      "attachments": {
+        "tank.jpg": "$steps.photo.image"
+      },
+      "fire_and_forget": false,
+      "cooldown_seconds": 0
+    }
+  ],
+  "outputs": [
+    {
+      "type": "JsonField",
+      "name": "tank",
+      "selector": "$steps.tank.predictions"
+    },
+    {
+      "type": "JsonField",
+      "name": "people",
+      "selector": "$steps.people.predictions"
+    },
+    {
+      "type": "JsonField",
+      "name": "gauge_oz",
+      "selector": "$steps.gauge.gauge_oz"
+    },
+    {
+      "type": "JsonField",
+      "name": "person",
+      "selector": "$steps.gauge.person"
+    },
+    {
+      "type": "JsonField",
+      "name": "email",
+      "selector": "$steps.refill_email.*"
+    }
+  ]
+}

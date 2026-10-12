@@ -89,7 +89,7 @@ The photos and the log belong to Company X. The model runs on the site computer.
 | Visits | Every person logged with a time and a photo | A visit record for every pumper and vendor |
 | Deliveries | Each refill booked with its bill | Each ticket checked against a fill event |
 
-On the proof these appear on the board, the operator screen. Sending them out, as an alert to a phone or into the operator's SCADA system or historian over MQTT, is the field design and is not built in the proof.
+On the proof these appear on the board, the operator screen. The refill alert is also shown as an email from the Roboflow app's version of the Workflow, with the annotated photo attached. Sending every event out from the site computer, and into the operator's SCADA system or historian over MQTT, is the field design and is not built in the proof.
 
 ### How long a well can go untreated
 

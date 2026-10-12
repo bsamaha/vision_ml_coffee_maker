@@ -41,7 +41,7 @@ The same command with an older commit is the rollback.
 
 ## Change the Workflow
 
-`workflow/tank-gauge.json` is generated. After changing `check/tank_gauge.py`, `check/volume.py`, or `check/workflow.py`, run `python check/workflow.py --export workflow/tank-gauge.json`, commit the JSON, and paste it into the Roboflow Workflow editor so the app matches the Pi. A test fails if the committed JSON falls behind.
+`workflow/tank-gauge.json` (what the Pi runs) and `workflow/tank-gauge-alert.json` (the same plus a refill email, for the Roboflow app only) are generated. After changing `check/tank_gauge.py`, `check/volume.py`, or `check/workflow.py`, run `python check/workflow.py --export workflow/tank-gauge.json` and `python check/workflow.py --export-alert workflow/tank-gauge-alert.json`, commit both, and paste them into the Roboflow Workflow editor so the app matches. A test fails if either committed file falls behind.
 
 ## What stays out of git
 

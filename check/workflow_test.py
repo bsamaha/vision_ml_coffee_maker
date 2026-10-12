@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import ledger
 import sight
 import tank_gauge
 import volume
@@ -102,6 +103,37 @@ class WorkflowTests(unittest.TestCase):
     def test_the_committed_export_is_current(self):
         committed = Path(__file__).resolve().parent.parent / "workflow" / "tank-gauge.json"
         self.assertEqual(json.loads(committed.read_text(encoding="utf-8")), workflow.definition())
+
+    def test_the_alert_workflow_is_the_board_workflow_plus_an_email(self):
+        board = workflow.definition()
+        alert = workflow.alert_definition()
+        self.assertEqual(alert["steps"][: len(board["steps"])], board["steps"])
+        self.assertEqual(alert["dynamic_blocks_definitions"], board["dynamic_blocks_definitions"])
+        added = {step["name"]: step for step in alert["steps"][len(board["steps"]) :]}
+        self.assertEqual(set(added), {"low", "photo", "refill_email"})
+        condition = added["low"]["condition_statement"]["statements"][0]
+        self.assertEqual(condition["comparator"]["type"], "(Number) <")
+        self.assertEqual(condition["right_operand"]["value"], ledger._ALARM / 10)
+        self.assertEqual(added["low"]["evaluation_parameters"], {"level": "$steps.gauge.gauge_oz"})
+        self.assertEqual(added["low"]["next_steps"], ["$steps.photo"])
+        email = added["refill_email"]
+        self.assertEqual(email["type"], "roboflow_core/email_notification@v2")
+        self.assertEqual(email["receiver_email"], "$inputs.alert_email")
+        self.assertEqual(email["attachments"], {"tank.jpg": "$steps.photo.image"})
+        self.assertIn({"type": "WorkflowParameter", "name": "alert_email"}, alert["inputs"])
+
+    def test_the_board_workflow_sends_nothing(self):
+        text = json.dumps(workflow.definition())
+        self.assertNotIn("email", text)
+        self.assertNotIn("continue_if", text)
+
+    def test_no_email_address_is_stored(self):
+        text = json.dumps(workflow.alert_definition())
+        self.assertNotRegex(text, r"[\w.+-]+@[\w-]+\.[\w.]+")
+
+    def test_the_committed_alert_export_is_current(self):
+        committed = Path(__file__).resolve().parent.parent / "workflow" / "tank-gauge-alert.json"
+        self.assertEqual(json.loads(committed.read_text(encoding="utf-8")), workflow.alert_definition())
 
     def test_detections_become_boxes(self):
         detections = tank_gauge.Detections((box("Reservoir", 0.9, 5, 50), box("liquid-level", 0.8, 20, 50)))
