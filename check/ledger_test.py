@@ -1399,13 +1399,48 @@ class LedgerTests(unittest.TestCase):
             pcount=1,
         )
 
-    def ticks(self, db, start, gauges, person=False, day="2026-10-12"):
+    def ticks(self, db, start, gauges, person=False, day="2026-10-12", every=10):
         when = at(start, day)
         applied = None
         for gauge in gauges:
             applied = ledger.tick(db, ledger.Tick(when, gauge, person, 0, 0, 0, 0, None, None))
-            when += timedelta(seconds=10)
+            when += timedelta(seconds=every)
         return applied.machine
+
+    def test_a_brew_survives_ticks_that_do_not_fall(self):
+        _folder, _path, db = self.db()
+        # The 11 October rehearsal, 23:14:20 to 23:16:50, at 7.5 s a tick.
+        brew = (70.0, 69.5, 69.2, 69.2, 68.9, 68.3, 67.3, 67.6, 67.7, 67.4, 66.9, 66.8, 66.2,
+                65.6, 65.6, 64.9, 64.1, 63.5, 61.8, 62.3, 63.0)
+        machine = self.ticks(db, "12:00", brew, every=7.5)
+        self.assertEqual(machine.activity, "brewing")
+        kinds = [row["kind"] for row in db.execute("SELECT kind FROM event ORDER BY id")]
+        self.assertEqual(kinds.count("brewing"), 1)
+        self.assertNotIn("idle", kinds)
+
+    def test_a_brew_ends_after_a_minute_without_a_fall(self):
+        _folder, _path, db = self.db()
+        machine = self.ticks(db, "12:00", (50.0, 49.0, 48.0, 47.0), every=7.5)
+        self.assertEqual(machine.activity, "brewing")
+        still = [47.0] * 9
+        when = at("12:00") + timedelta(seconds=30)
+        states = []
+        for gauge in still:
+            applied = ledger.tick(db, ledger.Tick(when, gauge, False, 0, 0, 0, 0, None, None))
+            states.append((round((when - at("12:00")).total_seconds(), 1), applied.machine.activity))
+            when += timedelta(seconds=7.5)
+        # The last fall was at 22.5 s. Brewing holds through 82.5 s and ends on the next tick.
+        self.assertEqual(dict(states)[82.5], "brewing")
+        self.assertEqual(dict(states)[90.0], "idle")
+
+    def test_a_low_first_read_after_a_fill_does_not_pin_70(self):
+        _folder, _path, db = self.db()
+        self.take_at_16(db)
+        machine = self.ticks(db, "12:01", (52.5,))
+        self.assertEqual(tenths(machine.booked_oz), 700)
+        machine = self.ticks(db, "12:02", (70.0, 70.0, 69.5, 68.9))
+        self.assertEqual(tenths(machine.booked_oz), 689)
+        self.assertEqual(tenths(machine.out_today), 11)
 
     def test_a_wobbling_still_tank_is_not_ounces_out(self):
         _folder, _path, db = self.db()

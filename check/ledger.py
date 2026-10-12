@@ -28,6 +28,10 @@ _NEAR = 10
 _SHIFT = 35
 _BREW_LO = 5
 _BREW_HI = 50
+# A brew ends after this long with no brew sample falling more than 0.5 fl oz. A Classic brew
+# falls about 0.4 fl oz a 7.5 s tick with a few tenths of model wobble, so single ticks that do
+# not fall are normal mid-brew. The longest such stretch in the 11 October rehearsal was ~45 s.
+_BREW_QUIET = timedelta(seconds=60)
 # Under one cup. An empty tank flickers between no line and about 3 fl oz.
 # A seated 0 locks that booking at 0. The flicker does not raise it.
 _CUP = 50
@@ -116,6 +120,7 @@ class _Fold(NamedTuple):
     coffee_cents: int
     seated_15m: int
     seated_today: int
+    last_fall: datetime | None
 
 
 class _Connection(sqlite3.Connection):
@@ -216,6 +221,7 @@ def _empty() -> _Fold:
         0,
         0,
         0,
+        None,
     )
 
 
@@ -275,6 +281,7 @@ def _step(
     logged_days = list(fold.logged_days)
     seated_15m = fold.seated_15m
     seated_today = fold.seated_today
+    last_fall = fold.last_fall
     events: list[Event] = []
 
     day = _chicago_day(at)
@@ -308,6 +315,11 @@ def _step(
         return 0 if old is None else old - level
 
     def book(new_gauge: int) -> int:
+        nonlocal anchor
+        # The return tick can catch the tank mid-settle. A higher seated line after the fill is
+        # the better full mark, or a low first read would pin the level at 70 through a brew.
+        if anchor is not None and new_gauge > anchor:
+            anchor = new_gauge
         return move(_scaled(new_gauge, anchor))
 
     def place(level: int) -> None:
@@ -451,6 +463,7 @@ def _step(
             old = booked
             drop = book(gauge)
             if _BREW_LO < drop <= _BREW_HI:
+                last_fall = at
                 if brew_falls == 0:
                     brew_from = old
                 brew_falls = min(brew_falls + 1, 2)
@@ -465,7 +478,8 @@ def _step(
                         )
                     )
             else:
-                if activity == "brewing":
+                quiet = last_fall is None or at - last_fall > _BREW_QUIET
+                if activity == "brewing" and quiet:
                     become("idle")
                     idle_line()
                 brew_falls = 0
@@ -540,6 +554,7 @@ def _step(
             coffee_cents,
             seated_15m,
             seated_today,
+            last_fall,
         ),
         tuple(events),
     )
