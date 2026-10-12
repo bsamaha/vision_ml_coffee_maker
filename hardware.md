@@ -2,9 +2,11 @@
 
 The site computer for this proof is a Raspberry Pi 4 Model B Rev 1.5, 4 GB (3.7 GiB reported by the OS). A separate Pi 5 that powers on and then shuts off is not this board and is not set up.
 
-The microSD card is 32 GB. It was rewritten on 9 October 2026 with Ubuntu Server 24.04.5 LTS, 64-bit, image `ubuntu-24.04.5-preinstalled-server-arm64+raspi.img.xz`. There is no desktop. The root filesystem is about 29 GB, with about 25 GB free after the first-boot packages. That meets the Inference note of a 64-bit board with at least 4 GB of RAM and about 20 GB free. Roboflow Inference is not installed yet.
+The microSD card is 32 GB. It was rewritten on 9 October 2026 with Ubuntu Server 24.04.5 LTS, 64-bit, image `ubuntu-24.04.5-preinstalled-server-arm64+raspi.img.xz`. There is no desktop. The root filesystem is about 29 GB, with about 25 GB free after the first-boot packages and about 21 GB free on 11 October. That meets the Inference note of a 64-bit board with at least 4 GB of RAM and about 20 GB free. Roboflow Inference is not installed yet.
 
 `vcgencmd get_throttled` reported `throttled=0x0` with the webcam attached and the board idle. The supply was holding.
+
+On 11 October it reported `throttled=0x80000`: the 80 °C soft temperature limit had been reached at some point since boot. The CPU was at 78.9 °C while `ffmpeg` flipped and encoded the webcam's full 60 fps and both models ran back to back. With `ffmpeg` thinned to 2 fps and a tick every 7.5 s, it sits at 61–63 °C, all four cores at their full 1.8 GHz. The board shows the temperature under the photo, amber at 75 °C and red at 80 °C. The Pi has no fan.
 
 ## Login
 
@@ -25,11 +27,22 @@ ssh -i ~/.ssh/raspberrypi_ed25519 bs@raspberrypi.local
 
 `bs` is in the `video` and `plugdev` groups, so `/dev/video0` is usable without extra permissions.
 
+The Mac has no key on the Pi. From the Mac, log in with the password through `sshpass` (`brew install sshpass`), with the password in the `SSHPASS` environment variable so it stays off the command line:
+
+```bash
+export SSHPASS='<password above>'
+sshpass -e ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password bs@192.168.1.248
+```
+
+The Mac's `pi` remote is `ssh://bs@192.168.1.248/home/bs/tank.git`. Push with `GIT_SSH_COMMAND="sshpass -e ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password" git push pi main`.
+
+This file is in a GitHub repository with the password in it. Change the password after the demo, and add the Mac's public key to `~/.ssh/authorized_keys` on the Pi so the password is not needed.
+
 ## Network
 
 The Pi is on Wi-Fi. This PC is on Ethernet. Both are on `192.168.1.0/24`, gateway `192.168.1.254`.
 
-On 9 October 2026 the Pi's DHCP address was `192.168.1.248` (`wlan0`) and this PC was `192.168.1.249`. The address can change. `raspberrypi.local` is the stable name. Avahi is installed and was answering.
+On 9 October 2026 the Pi's DHCP address was `192.168.1.248` (`wlan0`) and this PC was `192.168.1.249`. It was still `192.168.1.248` on 11 October. The address can change. `raspberrypi.local` is the stable name. Avahi is installed and was answering.
 
 The Wi-Fi SSID is `ATTTyDDqNP`. The passphrase is only in `network-config` on the card's boot partition.
 
@@ -58,6 +71,8 @@ MJPEG is the format to use. Modes that matter:
 | 1920×1080 | 30 fps |
 | 1280×720 | 60 fps |
 
+Each size has one rate. Asking `ffmpeg` for `-framerate 15` at 1280×720 still gets 60 fps from the camera. Flipping and re-encoding all 60 frames a second cost `ffmpeg` about 166% CPU. The board puts `fps=2` ahead of the flip, which brings `ffmpeg` to about 15%. The training capture page keeps its own command.
+
 Uncompressed YUYV is much slower (1080p at 2 fps) and is not the capture format.
 
 A test grab on 9 October 2026 wrote a real 1920×1080 JPEG:
@@ -78,13 +93,28 @@ Controls, read on 9 October 2026:
 
 ## Preview and Nano
 
-`scripts/pi-receive` starts `check/board.py` on port 8080. On this LAN that is [http://192.168.1.248:8080](http://192.168.1.248:8080). The boxed person page is `archive/check/preview.py`. The hook does not start it.
+`scripts/pi-receive` starts `check/board.py` on port 8080. On this LAN that is [http://192.168.1.248:8080](http://192.168.1.248:8080). The board draws the `Reservoir`, `liquid-level`, and `person` boxes over its own photo, so the old boxed person page, `archive/check/preview.py`, is not needed. The hook does not start it.
 
 The interpreter is the slot uv builds from `uv.lock`, under `/home/bs/tank-envs/slots/`. uv is `/home/bs/.local/bin/uv`. The pins are CPU `torch` 2.14.1 and `rfdetr` 1.10.1. The person weights are `/home/bs/.roboflow/models/rf-detr-nano.pth` (349 MB), person class only. The tank weights are `/home/bs/.roboflow/models/rate-and-volume-of-coffee-1/weights.pth`, classes `Reservoir` and `liquid-level`. Both are RF-DETR Nano on CPU. The same `RFDETRNano(device="cpu")` and `predict` call as the desk supervisor. That project refuses to load without CUDA. This one does not.
 
-On 9 October 2026 a 1280×720 person pass took about 4.4 seconds after the weights were on disk. The first load, including the download, was about 3 minutes. A later load was about 15 seconds. With the kitchen empty the person model returned bowl, chair, dining table, and bottle. No person was in that shot.
+On 9 October 2026 a 1280×720 person pass took about 4.4 seconds after the weights were on disk, with `ffmpeg` encoding 60 fps beside it. The first load, including the download, was about 3 minutes. A later load was about 15 seconds. With the kitchen empty the person model returned bowl, chair, dining table, and bottle. No person was in that shot.
+
+Measured on 11 October with the board running:
+
+| | |
+|---|---|
+| Tank model pass, 1280×720 | about 1.85 s |
+| Person model pass, 1280×720 | about 1.85 s |
+| Reading interval | 7.5 s, the board's floor |
+| CPU use, whole Pi | about 50% |
+| CPU temperature | 61–63 °C |
+| Board process memory | about 770 MB |
+| Free memory | about 68% |
+| Restart to first reading | about 66 s, mostly loading both models |
 
 `archive/check/nano_person.py` loads its own COCO Nano and reads `:8080/frame.jpg`. The live board does not serve that path. Roboflow Inference on port 9001 is not part of this build. The gauge is the workflow block to publish. The live path runs in process on port 8080.
+
+Every frame and box file from the 11 October rehearsal is in `/home/bs/rehearsal-2026-10-11/` (273 frames).
 
 # Coffee makers
 
@@ -104,7 +134,7 @@ Specs from the DCM200-series owner's guide:
 | Reservoir | 70 fl oz, removable |
 | Carafe | 70 fl oz glass, with a brew-through lid |
 | Cup | 5 fl oz. The 14-cup line is 70 fl oz |
-| Full-carafe brew | About 12–15 minutes |
+| Full-carafe brew | About 12–15 minutes per the guide. A full reservoir took about 19½ minutes on 11 October. |
 | Filter | Permanent filter, or a #4 paper cone |
 
 The reservoir marks are the 2, 4, 6, 8, 10, 12, and 14 cup lines. A Ninja scoop is 2 tbsp, and the chart is one scoop per 2 cups.
@@ -114,6 +144,8 @@ The reservoir marks are the 2, 4, 6, 8, 10, 12, and 14 cup lines. A Ninja scoop 
 Every brew empties the reservoir. CLASSIC, RICH, and 1-4 CUP change the brew cycle. They do not choose a volume. Fill only to the line for the amount you want. The guide states this twice: the unit uses the total amount of water in the reservoir regardless of the 1-4 CUP setting, and the reservoir must not be filled above the 4-cup line when that button is selected.
 
 Each brew starts, pauses, then continues. That pause is the pre-infusion, and its length varies by brew. When the cycle finishes the unit beeps and the clock shows `End`.
+
+Measured from the camera on 11 October, a Classic brew from a full 70 fl oz reservoir: the level held for about 40 seconds after Brew was pressed, then fell about 3 fl oz a minute at first and about 4.6 mid-brew, about 3.6 on average, and the tank was dry about 19½ minutes later. That is slower than the guide's 12–15 minutes. The guide says a full carafe that takes longer than usual is the sign to run a clean.
 
 The carafe has to be in place. If it is not, the brewer holds the coffee in the brew basket, and that basket can overflow. The carafe also has to start empty. Adding water after a brew or a clean has started is what overflows it.
 
