@@ -80,11 +80,15 @@ _SCRIPT = f"""
         const old = document.getElementById(id);
         if (old) kept[id] = old.scrollTop;
       }}
+      const diag = document.getElementById("diag");
+      const open = diag ? diag.open : false;
       document.getElementById("board").replaceWith(fresh);
       for (const id in kept) {{
         const now = document.getElementById(id);
         if (now) now.scrollTop = kept[id];
       }}
+      const nextDiag = document.getElementById("diag");
+      if (nextDiag) nextDiag.open = open;
     }} catch (error) {{
       return;
     }} finally {{
@@ -105,6 +109,8 @@ _PHOTO = """
   max-width: 100%;
   display: block;
   object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .6);
 }
 #frame[hidden],
 #hero[hidden] {
@@ -114,23 +120,35 @@ _PHOTO = """
   flex: 1 1 0;
   min-width: 0;
   padding: 4px 4px 6px;
-  border: 1px solid #333;
-  background: #000;
-  color: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--tile);
+  color: var(--muted);
   cursor: pointer;
   text-decoration: none;
+  transition: border-color .15s ease;
 }
+#strip a:hover { border-color: #3a414b; }
 #strip a[aria-current="page"] {
-  border: 2px solid #fff;
-  padding: 3px 3px 5px;
+  border-color: var(--crema);
+  box-shadow: 0 0 0 1px var(--crema);
+  color: var(--text);
 }
 #strip img {
   display: block;
   width: 100%;
   height: 56px;
   object-fit: cover;
+  border-radius: 6px;
 }
 """
+_CUP_ICON = (
+    '<svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">'
+    '<path d="M3.5 9h13v4.5a6 6 0 0 1-6 6h-1a6 6 0 0 1-6-6z" fill="currentColor"/>'
+    '<path d="M16.5 10.5h1.25a2.75 2.75 0 0 1 0 5.5H16" fill="none" stroke="currentColor" stroke-width="2"/>'
+    '<path d="M7.5 2.5c-.9 1.2.9 2.3 0 3.5M11 2.5c-.9 1.2.9 2.3 0 3.5" fill="none" '
+    'stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
+)
 
 
 class _Ounces(NamedTuple):
@@ -202,6 +220,7 @@ class _Live(NamedTuple):
 
 class _LogLine(NamedTuple):
     at: datetime
+    kind: str
     message: str
 
 
@@ -466,7 +485,7 @@ def _load(db: Path, frames: Path) -> _Quiet | _Shown:
             tick_at = datetime.fromisoformat(str(reading["ts"]))
             since = (tick_at.astimezone(_CHICAGO).date() - timedelta(days=3)).isoformat()
             events = conn.execute(
-                "SELECT ts, message FROM event ORDER BY id DESC LIMIT ?", (_EVENTS,)
+                "SELECT ts, kind, message FROM event ORDER BY id DESC LIMIT ?", (_EVENTS,)
             ).fetchall()
             fill_rows = conn.execute(
                 "SELECT day, delta_oz FROM event WHERE kind = 'fill' AND day >= ?", (since,)
@@ -520,7 +539,8 @@ def _load(db: Path, frames: Path) -> _Quiet | _Shown:
             ),
         )
         log = tuple(
-            _LogLine(datetime.fromisoformat(str(row["ts"])), str(row["message"])) for row in events
+            _LogLine(datetime.fromisoformat(str(row["ts"])), str(row["kind"]), str(row["message"]))
+            for row in events
         )
         fills = tuple(
             _Fill(date.fromisoformat(str(row["day"])), round(float(row["delta_oz"]) * 10))
@@ -593,7 +613,7 @@ def _prior(
         earlier = day - timedelta(days=offset)
         label = f"{_SHORT[earlier.weekday()]} {earlier.day}"
         if earlier not in logged_days:
-            rows.append((label, "no rows"))
+            rows.append((label, "No data"))
             continue
         cents = sum(fill.cents for fill in fills if fill.day == earlier)
         rows.append((label, _money(cents)))
@@ -712,6 +732,9 @@ def _html(
     earlier = selected is not None and selected != len(frames) - 1
     if now is None:
         now = datetime.now(_CHICAGO)
+    gauge_fill = 0.0
+    gauge_low = False
+    activity_class = ""
     if isinstance(board, _Quiet):
         age_html = '<p class="age" id="age"></p>'
         when = ""
@@ -753,6 +776,8 @@ def _html(
             ounces = ""
         else:
             band = _band(live.booked)
+            gauge_fill = max(0.0, min(100.0, live.booked.tenths / 7))
+            gauge_low = band is _Band.LOW
             low = " low" if band is _Band.LOW else ""
             band_html = f'<p class="band{low}" id="band-name">{_esc(band.value)}</p>'
             ounces = _one_decimal(live.booked)
@@ -775,6 +800,7 @@ def _html(
         alarm_text = "On" if live.alarm_on else "Off"
         alarm_age = "for " + _elapsed(live.alarm_started, live.tick_at)
         activity_text = live.activity.value
+        activity_class = f" act-{live.activity.name}"
         activity_detail = _detail(live.activity, live.activity_started, live.tick_at)
         if live.person:
             person_html = '<p id="person-line" class="yes">Yes</p>'
@@ -786,7 +812,8 @@ def _html(
         lines = []
         for line in board.log:
             lines.append(
-                f"<li><time>{_esc(_wall(line.at).clock)}</time>{_esc(line.message)}</li>"
+                f'<li class="ev-{_esc(line.kind)}"><time>{_esc(_wall(line.at).clock)}</time>'
+                f"{_esc(line.message)}</li>"
             )
         log_html = "".join(lines)
         timings = _timing_rows(live.timings)
@@ -815,6 +842,13 @@ def _html(
     if selected is not None:
         name = frames[selected].name
         photo = f'<img id="frame" src="{_esc(_src(name))}" alt="{_esc(name)}">'
+    gauge_class = "gauge low" if gauge_low else "gauge"
+    gauge_html = (
+        f'<div class="{gauge_class}" id="gauge" style="--fill: {gauge_fill:.1f}%" aria-hidden="true">'
+        '<div class="gauge-fill"></div>'
+        '<i style="bottom: 75%"></i><i style="bottom: 50%"></i>'
+        '<i class="alarm-line" style="bottom: 25%"></i></div>'
+    )
     style = _specimen()
     return (
         "<!doctype html>\n"
@@ -830,23 +864,34 @@ def _html(
         "<body>\n"
         f'<main id="board"{board_class}>\n'
         '<header id="top">\n'
+        '<div class="brand">\n'
+        f"{_CUP_ICON}\n"
+        '<div class="brand-text">\n'
+        '<p class="brand-name">Coffee tank</p>\n'
         f'<p id="when">{when}</p>\n'
+        "</div>\n"
+        "</div>\n"
         '<div class="freshness">\n'
         f"{age_html}\n"
         f'<p class="live-mark" id="live-mark" data-mark="{_esc(mark)}">{_esc(mark)}</p>\n'
         "</div>\n"
         "</header>\n"
         '<section id="level" aria-label="Level">\n'
+        '<div class="level-head">\n'
+        "<div>\n"
         '<p class="k">Level</p>\n'
         f"{band_html}\n"
         f'<p class="oz" id="ounces">{_esc(ounces)}</p>\n'
         f"{model_html}\n"
+        "</div>\n"
+        f"{gauge_html}\n"
+        "</div>\n"
         '<dl class="rows">\n'
         f'<div><dt>15 min out</dt><dd id="out-15">{_esc(out_15)}</dd></div>\n'
         f'<div><dt>Today out</dt><dd id="out-today">{_esc(out_today)}</dd></div>\n'
         f'<div><dt>Seen today</dt><dd id="seen-today">{_esc(seen)}</dd></div>\n'
         f'<div><dt>Refills</dt><dd id="refill-today">{_esc(refills)}</dd></div>\n'
-        f'<div><dt>Volume</dt><dd id="volume-today">{_esc(volume)}</dd></div>\n'
+        f'<div><dt>Filled today</dt><dd id="volume-today">{_esc(volume)}</dd></div>\n'
         f'<div><dt>Coffee today</dt><dd id="bill-today">{_esc(bill)}</dd></div>\n'
         f'<div><dt id="logged-days">{_esc(logged)}</dt><dd id="monthly">{_esc(monthly)}</dd></div>\n'
         "</dl>\n"
@@ -867,7 +912,7 @@ def _html(
         "</div>\n"
         "<div class=\"block\">\n"
         '<p class="k">Activity</p>\n'
-        f'<p class="big" id="activity-value">{_esc(activity_text)}</p>\n'
+        f'<p class="big{activity_class}" id="activity-value">{_esc(activity_text)}</p>\n'
         f'<p class="sub" id="activity-detail">{_esc(activity_detail)}</p>\n'
         "</div>\n"
         "<div class=\"block\">\n"
@@ -880,8 +925,13 @@ def _html(
         "</div>\n"
         "</section>\n"
         '<footer id="dock">\n'
+        '<div class="dock-row">\n'
         f'<div class="prior" id="prior">{prior_html}</div>\n'
+        '<details class="diag" id="diag">\n'
+        "<summary>Timing</summary>\n"
         f'<ul class="ticks" id="ticks">{tick_html}</ul>\n'
+        "</details>\n"
+        "</div>\n"
         '<div id="strip" role="listbox" aria-label="Last 8 frames. The last one is the most recent.">'
         f"{''.join(strip)}</div>\n"
         "</footer>\n"

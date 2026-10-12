@@ -125,7 +125,7 @@ class LiveTests(unittest.TestCase):
         self.assertIn("Sun 11", prior)
         self.assertIn("Sat 10", prior)
         self.assertIn("Fri 9", prior)
-        self.assertEqual(prior.count("no rows"), 3)
+        self.assertEqual(prior.count("No data"), 3)
         self.assertNotIn("120 ms", block(page, "ticks", "</ul>"))
         self.assertNotIn("Preview, not on the Pi", page)
         self.assertNotIn("data-state=", page)
@@ -353,7 +353,8 @@ class LiveTests(unittest.TestCase):
             db.close()
         page = self.page(path, frames)
         events = block(page, "events", "</ol>")
-        self.assertEqual(events.count("<li>"), 50)
+        self.assertEqual(events.count("<li "), 50)
+        self.assertIn('<li class="ev-person">', events)
         self.assertIn("Line 59.", events)
         self.assertNotIn("Line 9.", events)
 
