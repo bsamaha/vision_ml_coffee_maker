@@ -112,7 +112,7 @@ Measured with the board running:
 | CPU temperature | 61–63 °C | 59–63 °C |
 | Board process memory | about 770 MB | about 1,450 MB |
 | Free memory | about 68% | about 53% |
-| Restart to first reading | about 66 s | about 4 min the first time, mostly the model download; less from the cache |
+| Restart to first reading | about 66 s | about 55 s from the cache; about 4 min the first time, mostly the model download |
 
 Roboflow Inference runs inside the board process, not as a server on port 9001, and Docker is not installed.
 

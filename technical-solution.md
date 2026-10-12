@@ -148,7 +148,7 @@ Not in this build. An exposure probe, thumbnail files, a password, a reservoir c
 
 ## 7. Demo
 
-Monday 12 October, 1:00 PM ET. The page is already ticking before the call. Do not push a commit during the call: a restart takes over a minute while `inference` imports and both models load.
+Monday 12 October, 1:00 PM ET. The page is already ticking before the call. Do not push a commit during the call: a restart takes about 1 minute while `inference` imports and both models load from the cache.
 
 Reset before the call, after any rehearsal, so the log starts clean. Events are written once and a restart does not rebuild them. From an SSH session on the Pi:
 
@@ -208,7 +208,7 @@ What it measured, 12 October:
 
 The Workflow read all 348 saved frames from the 11 October rehearsal. The gauge differed from the in-process path by a median of 0.00 fl oz, 329 of 336 within 1 fl oz, and the person flag and reservoir detection matched on every frame. The two large differences were the two in-process misreads, and the Workflow read both correctly: the empty tank with a person beside it, which the in-process model read as full, and the refill frame that read 52.5 of 70 fl oz. Replaying the ledger on the Workflow's readings gave the same takes, refills, bills, alarms, and empty endings for both brews. The first brew showed Brewing about 50 seconds later.
 
-The first start downloaded the models in about 4 minutes over Wi-Fi. Later starts load them from the cache.
+The first start downloaded the models in about 4 minutes over Wi-Fi. A restart loads them from the cache and is ready in about 55 seconds; the first start of a new slot after a dependency change takes about 3 minutes.
 
 ## 9. Rehearsal, 11 October 2026
 

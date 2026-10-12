@@ -19,7 +19,7 @@ for t in check/*_test.py page/*_test.py; do uv run --no-project python "$t"; don
 
 If the install fails, the push fails and the board that was already running stays up. If the new board does not start, read `/tmp/preview.log` on the Pi.
 
-Do not push during the demo. A restart takes over a minute while `inference` imports and both models load.
+Do not push during the demo. A restart takes about 1 minute while `inference` imports and both models load from the cache, and about 3 minutes the first time after a dependency change.
 
 ## Change a dependency
 
